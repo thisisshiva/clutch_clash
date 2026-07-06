@@ -11,7 +11,7 @@ export function LoginScreen({ onDone }) {
   let mode = 'guest'; // 'guest' | 'signin' | 'signup'
 
   const nameInput = el('input', {
-    type: 'text', placeholder: 'Apna racer naam likho',
+    type: 'text', placeholder: 'Enter your racer name',
     maxLength: 20, value: authService.guestName,
   });
   const emailInput = el('input', { type: 'email', placeholder: 'email@example.com' });
@@ -29,7 +29,7 @@ export function LoginScreen({ onDone }) {
     el('label', {}, 'Username'), userInput,
   );
 
-  const submitBtn = el('button.btn', { onclick: submit }, 'Race Shuru Karo');
+  const submitBtn = el('button.btn', { onclick: submit }, 'Start Racing');
 
   const tabs = ['guest', 'signin', 'signup'].map((m) =>
     el('div.tab', {
@@ -45,7 +45,7 @@ export function LoginScreen({ onDone }) {
     guestFields.style.display = m === 'guest' ? '' : 'none';
     signinFields.style.display = m === 'guest' ? 'none' : '';
     signupExtra.style.display = m === 'signup' ? '' : 'none';
-    submitBtn.textContent = m === 'guest' ? 'Race Shuru Karo' : m === 'signin' ? 'Login' : 'Create Account';
+    submitBtn.textContent = m === 'guest' ? 'Start Racing' : m === 'signin' ? 'Login' : 'Create Account';
   }
 
   async function submit() {
@@ -54,13 +54,13 @@ export function LoginScreen({ onDone }) {
       submitBtn.disabled = true;
       if (mode === 'guest') {
         const name = nameInput.value.trim();
-        if (!name) throw new Error('Naam to likho pehle!');
+        if (!name) throw new Error('Please enter a name first!');
         authService.playAsGuest(name);
       } else if (mode === 'signin') {
         await authService.signIn(emailInput.value.trim(), passInput.value);
       } else {
         const username = userInput.value.trim();
-        if (username.length < 3) throw new Error('Username kam se kam 3 characters ka ho');
+        if (username.length < 3) throw new Error('Username must be at least 3 characters');
         await authService.signUp(emailInput.value.trim(), passInput.value, username);
       }
       onDone();
@@ -75,7 +75,7 @@ export function LoginScreen({ onDone }) {
 
   const authNote = isSupabaseEnabled
     ? null
-    : el('div.hint', {}, 'Login/Signup ke liye Supabase configure karna hoga (.env) - abhi Guest mode chalega.');
+    : el('div.hint', {}, 'Login/Signup requires Supabase configuration (.env) - Guest mode works for now.');
   if (!isSupabaseEnabled) {
     tabs[1].style.display = 'none';
     tabs[2].style.display = 'none';
@@ -83,7 +83,7 @@ export function LoginScreen({ onDone }) {
 
   return el('div.screen', {},
     el('div.logo', {}, 'Clutch Clash'),
-    el('div.tagline', {}, 'Multiplayer F1 Racing - Dosto ke saath full speed'),
+    el('div.tagline', {}, 'Multiplayer F1 Racing - Full speed with your friends'),
     el('div.panel', { style: 'width:400px' },
       el('div.tabs', {}, tabs),
       guestFields,

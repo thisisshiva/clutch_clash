@@ -46,7 +46,7 @@ class AuthService {
       if (profileError) {
         throw new Error(
           profileError.code === '23505'
-            ? 'Yeh username already liya hua hai'
+            ? 'This username is already taken'
             : profileError.message
         );
       }

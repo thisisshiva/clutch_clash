@@ -24,11 +24,11 @@ export function MapSelectScreen({ tracks, onSelect, onBack }) {
 
   return el('div.screen', {},
     el('div.panel', { style: 'width:660px' },
-      el('h2', {}, 'Track Chuno'),
+      el('h2', {}, 'Choose a Track'),
       el('div.track-grid', {}, cards),
       el('div.row', { style: 'margin-top:18px' },
         el('button.btn.secondary', { onclick: onBack }, 'Back'),
-        el('button.btn', { onclick: () => onSelect(selectedId) }, 'Room Banao'),
+        el('button.btn', { onclick: () => onSelect(selectedId) }, 'Create Room'),
       ),
     ),
   );

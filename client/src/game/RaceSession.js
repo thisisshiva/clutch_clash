@@ -140,7 +140,7 @@ export class RaceSession {
     this.engine.camera.position.copy(this._camPos);
   }
 
-  /** Server ne checkpoint confirm kiya - update HUD counters. */
+  /** Server confirmed a checkpoint pass - update HUD counters. */
   applyServerProgress({ lap, finished }) {
     if (finished) {
       this.finished = true;

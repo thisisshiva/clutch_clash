@@ -19,10 +19,10 @@ export function LobbyScreen({ tracks, getRoom, localId, onSetTrack, onStart, onL
   const startBtn = el('button.btn', { onclick: onStart }, 'Start Race');
   const waitHint = el('div.hint', { style: 'text-align:center' });
   const codeEl = el('div.room-code', {
-    title: 'Click karke copy karo',
+    title: 'Click to copy',
     onclick: () => {
       navigator.clipboard?.writeText(getRoom()?.code || '');
-      toast('Room code copy ho gaya!');
+      toast('Room code copied!');
     },
   });
 
@@ -36,7 +36,7 @@ export function LobbyScreen({ tracks, getRoom, localId, onSetTrack, onStart, onL
     playerList.replaceChildren(...room.players.map((p) =>
       el('li', {},
         el('span.color-dot', { style: `background:#${p.color.toString(16).padStart(6, '0')}` }),
-        el('span', {}, p.name, p.id === localId() ? ' (tum)' : ''),
+        el('span', {}, p.name, p.id === localId() ? ' (you)' : ''),
         p.id === room.hostId ? el('span.host-tag', {}, 'Host') : null,
       )
     ));
@@ -53,7 +53,7 @@ export function LobbyScreen({ tracks, getRoom, localId, onSetTrack, onStart, onL
 
     startBtn.style.display = isHost ? '' : 'none';
     waitHint.style.display = isHost ? 'none' : '';
-    waitHint.textContent = 'Host race start karega...';
+    waitHint.textContent = 'Waiting for the host to start the race...';
   }
 
   refresh();

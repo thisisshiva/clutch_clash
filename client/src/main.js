@@ -76,7 +76,7 @@ async function connectSocket() {
     session?.enableControls();
   });
   socketClient.on('race:playerFinished', ({ id, name, place }) => {
-    toast(`${id === socketClient.id ? 'Tum' : name} P${place} pe finish! 🏁`);
+    toast(`${id === socketClient.id ? 'You' : name} finished P${place}! 🏁`);
   });
   socketClient.on('race:results', ({ results }) => showResults(results));
 
@@ -85,7 +85,7 @@ async function connectSocket() {
   socketClient.socket.on('disconnect', () => {
     if (room) {
       cleanupRoom();
-      toast('Server se connection toot gaya');
+      toast('Lost connection to the server');
       showMenu();
     }
   });
@@ -168,7 +168,7 @@ async function toggleVoice() {
   if (voiceState === 'off') {
     const ok = await voice.start();
     voiceState = ok ? 'on' : 'denied';
-    if (!ok) toast('Mic access nahi mila - browser permission check karo');
+    if (!ok) toast('Microphone access denied - check browser permissions');
   } else if (voiceState === 'on') {
     voice.setMuted(true);
     voiceState = 'muted';
@@ -191,7 +191,7 @@ async function showMenu() {
   try {
     await connectSocket();
   } catch {
-    toast('Server nahi mil raha - kya server chalu hai?');
+    toast('Cannot reach the server - is it running?');
   }
   showScreen(MainMenuScreen({
     onCreateRoom: showMapSelect,
@@ -217,7 +217,7 @@ function showMapSelect() {
     onSelect: async (trackId) => {
       const res = await socketClient.request('room:create', { trackId });
       if (!res.ok) {
-        toast(res.error || 'Room create nahi hua');
+        toast(res.error || 'Failed to create room');
         return;
       }
       room = res.room;
@@ -280,7 +280,7 @@ function leaveRoom() {
   try {
     tracks = await loadTracks();
   } catch {
-    toast('Server se track data nahi mila - server start karke refresh karo');
+    toast('Could not load track data - start the server and refresh');
   }
   await authService.restoreSession();
   showLogin();

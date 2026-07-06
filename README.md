@@ -5,10 +5,10 @@ Multiplayer 3D F1-style track racing game — Three.js + Node.js + Socket.io + W
 ## Features
 
 - 3 tracks: Sprint Circuit (3 checkpoints), Grand Loop (5), Endurance Ring (10)
-- Checkpoint respawn — `R` dabao aur last checkpoint pe wapas aa jao
-- Room-based multiplayer — 6-character code se dost join karte hain (max 8 players)
+- Checkpoint respawn — press `R` to respawn at the last checkpoint
+- Room-based multiplayer — friends join with a 6-character code (max 8 players)
 - Server-authoritative race logic — countdown, checkpoint order validation, laps, finish order
-- Proximity voice chat — paas wali car ki aawaz tez, door wali dheemi (WebRTC + `THREE.PositionalAudio`)
+- Proximity voice chat — nearby cars sound louder, distant ones quieter (WebRTC + `THREE.PositionalAudio`)
 - Procedural engine sounds (positional)
 - Supabase auth (email/password) + guest mode + friends system
 
@@ -22,16 +22,16 @@ npm run dev
 - Client: http://localhost:5173
 - Server: http://localhost:3000
 
-### Multiple devices se test karna (same WiFi)
+### Testing on multiple devices (same WiFi)
 
-1. `npm run dev` chalao
-2. Apne PC ka LAN IP nikalo (`ipconfig` → IPv4 Address)
-3. Doosre device pe kholo: `http://<LAN-IP>:5173`
-4. Ek device pe room banao, doosre pe code daal ke join karo
+1. Run `npm run dev`
+2. Find your PC's LAN IP (`ipconfig` → IPv4 Address)
+3. On the other device, open: `http://<LAN-IP>:5173`
+4. Create a room on one device, enter the code on the other to join
 
-> **Voice chat note:** Mic access sirf `localhost` ya HTTPS pe milta hai.
-> LAN pe voice test karne ke liye `npm run dev:https` use karo aur
-> `https://<LAN-IP>:5173` kholo (self-signed certificate warning accept karni hogi).
+> **Voice chat note:** Microphone access is only granted on `localhost` or HTTPS.
+> To test voice over LAN, use `npm run dev:https` and open
+> `https://<LAN-IP>:5173` (you'll need to accept the self-signed certificate warning).
 
 ## Controls
 
@@ -43,24 +43,24 @@ npm run dev
 | Space | Handbrake (drift) |
 | R | Respawn at last checkpoint |
 
-## Supabase Setup (optional — login + friends ke liye)
+## Supabase Setup (optional — for login + friends)
 
-1. [supabase.com](https://supabase.com) pe free project banao
-2. SQL Editor me [supabase/schema.sql](supabase/schema.sql) paste karke run karo
-3. Project Settings → API se URL aur anon key copy karo
-4. `client/.env` banao:
+1. Create a free project at [supabase.com](https://supabase.com)
+2. Paste [supabase/schema.sql](supabase/schema.sql) into the SQL Editor and run it
+3. Copy the URL and anon key from Project Settings → API
+4. Create `client/.env`:
    ```
    VITE_SUPABASE_URL=https://xxxx.supabase.co
    VITE_SUPABASE_ANON_KEY=eyJ...
    ```
-5. `server/.env` banao (socket JWT verification ke liye):
+5. Create `server/.env` (for socket JWT verification):
    ```
    SUPABASE_URL=https://xxxx.supabase.co
    SUPABASE_ANON_KEY=eyJ...
    ```
-6. Dev servers restart karo
+6. Restart the dev servers
 
-Bina Supabase ke game **guest mode** me fully chalta hai — sirf login/friends disabled rahenge.
+Without Supabase the game runs fully in **guest mode** — only login/friends are disabled.
 
 ## Architecture
 

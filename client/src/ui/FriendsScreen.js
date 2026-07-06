@@ -12,7 +12,7 @@ export function FriendsScreen({ onBack }) {
   const outgoingList = el('ul.friend-list');
   const searchResults = el('ul.friend-list');
   const searchInput = el('input', {
-    type: 'text', placeholder: 'Username se dhundo...',
+    type: 'text', placeholder: 'Search by username...',
     onkeydown: (e) => { if (e.key === 'Enter') search(); },
   });
 
@@ -28,7 +28,7 @@ export function FriendsScreen({ onBack }) {
             onclick: () => act(() => friendsService.removeFriendship(f.friendshipId)),
           }, 'Remove'),
         )
-      ) : [el('li', {}, el('span.hint', {}, 'Abhi koi friend nahi - upar se search karo!'))]));
+      ) : [el('li', {}, el('span.hint', {}, 'No friends yet - search above to add some!'))]));
 
       incomingList.replaceChildren(...incoming.map((f) =>
         el('li', {},
@@ -77,7 +77,7 @@ export function FriendsScreen({ onBack }) {
             }),
           }, 'Add'),
         )
-      ) : [el('li', {}, el('span.hint', {}, 'Koi nahi mila is naam se'))]));
+      ) : [el('li', {}, el('span.hint', {}, 'No users found with that name'))]));
     } catch (e) {
       error.textContent = e.message;
     }
@@ -95,7 +95,7 @@ export function FriendsScreen({ onBack }) {
       incomingList,
       el('h3', {}, 'Sent Requests'),
       outgoingList,
-      el('h3', {}, 'Mere Friends'),
+      el('h3', {}, 'My Friends'),
       friendsList,
       el('button.btn.secondary', { style: 'margin-top:16px', onclick: onBack }, 'Back'),
     ),

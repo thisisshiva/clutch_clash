@@ -11,7 +11,7 @@ const TRACK_DEFS = [
   {
     id: 'sprint',
     name: 'Sprint Circuit',
-    description: 'Chhota fast loop - 3 checkpoints, 3 laps',
+    description: 'Short fast loop - 3 checkpoints, 3 laps',
     checkpointCount: 3,
     laps: 3,
     roadWidth: 16,
@@ -23,7 +23,7 @@ const TRACK_DEFS = [
   {
     id: 'grand',
     name: 'Grand Loop',
-    description: 'S-curves wala technical circuit - 5 checkpoints, 2 laps',
+    description: 'Technical circuit with S-curves - 5 checkpoints, 2 laps',
     checkpointCount: 5,
     laps: 2,
     roadWidth: 15,
@@ -36,7 +36,7 @@ const TRACK_DEFS = [
   {
     id: 'endurance',
     name: 'Endurance Ring',
-    description: 'Sabse lamba aur mushkil - 10 checkpoints, 2 laps',
+    description: 'Longest and toughest - 10 checkpoints, 2 laps',
     checkpointCount: 10,
     laps: 2,
     roadWidth: 14,

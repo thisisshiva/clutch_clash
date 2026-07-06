@@ -20,7 +20,7 @@ export function MainMenuScreen({ onCreateRoom, onJoinRoom, onFriends, onLogout }
   async function join() {
     const code = codeInput.value.trim().toUpperCase();
     if (code.length !== 6) {
-      error.textContent = '6 character ka code chahiye';
+      error.textContent = 'Room code must be 6 characters';
       return;
     }
     error.textContent = '';
@@ -33,8 +33,8 @@ export function MainMenuScreen({ onCreateRoom, onJoinRoom, onFriends, onLogout }
     el('div.tagline', {}, `Welcome, ${authService.displayName}`),
     el('div.panel', { style: 'width:400px' },
       el('div.stack', {},
-        el('button.btn', { onclick: onCreateRoom }, 'Room Banao'),
-        el('h3', {}, 'Ya Room Join Karo'),
+        el('button.btn', { onclick: onCreateRoom }, 'Create Room'),
+        el('h3', {}, 'Or Join a Room'),
         codeInput,
         error,
         el('button.btn.secondary', { onclick: join }, 'Join Room'),
@@ -42,7 +42,7 @@ export function MainMenuScreen({ onCreateRoom, onJoinRoom, onFriends, onLogout }
           ? el('button.btn.secondary', { onclick: onFriends }, 'Friends')
           : null,
         el('button.btn.secondary', { onclick: onLogout },
-          authService.isLoggedIn ? 'Logout' : 'Naam Badlo'),
+          authService.isLoggedIn ? 'Logout' : 'Change Name'),
       ),
     ),
   );

@@ -8,7 +8,7 @@ let cache = null;
 export async function loadTracks() {
   if (cache) return cache;
   const res = await fetch('/api/tracks/full');
-  if (!res.ok) throw new Error('Track data load nahi hui');
+  if (!res.ok) throw new Error('Failed to load track data');
   cache = await res.json();
   return cache;
 }

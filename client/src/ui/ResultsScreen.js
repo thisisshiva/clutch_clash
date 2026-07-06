@@ -29,7 +29,7 @@ export function ResultsScreen({ results, isHost, onBackToLobby, onLeave }) {
       el('div.stack', {},
         isHost
           ? el('button.btn', { onclick: onBackToLobby }, 'Back to Lobby (Rematch)')
-          : el('div.hint', { style: 'text-align:center' }, 'Host rematch start kar sakta hai...'),
+          : el('div.hint', { style: 'text-align:center' }, 'The host can start a rematch...'),
         el('button.btn.secondary', { onclick: onLeave }, 'Leave Room'),
       ),
     ),

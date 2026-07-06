@@ -27,7 +27,7 @@ class FriendsService {
       status: 'pending',
     });
     if (error) {
-      throw new Error(error.code === '23505' ? 'Request already bheji hui hai' : error.message);
+      throw new Error(error.code === '23505' ? 'Request already sent' : error.message);
     }
   }
 

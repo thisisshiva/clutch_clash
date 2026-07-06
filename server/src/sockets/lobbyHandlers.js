@@ -27,11 +27,11 @@ export function registerLobbyHandlers(io, socket) {
 
   socket.on('room:join', (payload, cb) => {
     const room = roomManager.getRoom(payload?.code);
-    if (!room) return cb?.({ ok: false, error: 'Room nahi mila. Code check karo.' });
+    if (!room) return cb?.({ ok: false, error: 'Room not found. Check the code.' });
     if (room.status !== ROOM_STATUS.LOBBY) {
-      return cb?.({ ok: false, error: 'Race already chal rahi hai is room me.' });
+      return cb?.({ ok: false, error: 'A race is already in progress in this room.' });
     }
-    if (room.isFull) return cb?.({ ok: false, error: 'Room full hai.' });
+    if (room.isFull) return cb?.({ ok: false, error: 'Room is full.' });
 
     leaveCurrentRoom(io, socket);
     room.addPlayer(socket.id, socket.data.name, socket.data.userId);
