@@ -15,6 +15,7 @@ const BASE = {
   handbrakeGrip: 1.6,
   offTrackFriction: 14,
   offTrackMaxSpeed: 18,
+  offTrackMaxReverse: 8.3,
 };
 
 const BOOST_DURATION = 5;
@@ -67,6 +68,7 @@ export class CarPhysics {
       handbrakeGrip: BASE.handbrakeGrip,
       offTrackFriction: BASE.offTrackFriction,
       offTrackMaxSpeed: BASE.offTrackMaxSpeed,
+      offTrackMaxReverse: BASE.offTrackMaxReverse,
       boostMultiplier: 1.2 + stats.boost * STAT_SCALE * 0.55,
       weight: stats.weight,
     };
@@ -209,8 +211,12 @@ export class CarPhysics {
 
     vFwd -= (T.rollingResistance + Math.abs(vFwd) * T.drag) * Math.sign(vFwd || 1) * dt;
     if (!onTrack) {
-      vFwd -= T.offTrackFriction * Math.sign(vFwd || 1) * dt;
-      vFwd = Math.max(-T.offTrackMaxSpeed, Math.min(T.offTrackMaxSpeed, vFwd));
+      // Grass drags the car, but the engine can still push it in reverse:
+      // only oppose reverse motion while coasting/braking, not when actively reversing.
+      const friction = T.offTrackFriction * dt;
+      if (vFwd > 0) vFwd = Math.max(0, vFwd - friction);
+      else if (vFwd < 0 && input.throttle >= 0) vFwd = Math.min(0, vFwd + friction);
+      vFwd = Math.max(-T.offTrackMaxReverse, Math.min(T.offTrackMaxSpeed, vFwd));
     }
 
     const maxSpd = T.maxSpeed * boostMul * damageSpeedMul;
