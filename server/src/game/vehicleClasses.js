@@ -24,6 +24,12 @@ class SuvServerCar extends AbstractServerCar {
   }
 }
 
+class RangeRoverServerCar extends AbstractServerCar {
+  constructor() {
+    super({ id: 'range-rover', stats: { speed: 76, power: 80, health: 96, grip: 72, weight: 96, boost: 64 } });
+  }
+}
+
 class TaxiServerCar extends AbstractServerCar {
   constructor() {
     super({ id: 'taxi', stats: { speed: 76, power: 70, health: 84, grip: 74, weight: 86, boost: 64 } });
@@ -46,6 +52,7 @@ export function createRegularServerCars() {
   return [
     new SedanServerCar(),
     new SuvServerCar(),
+    new RangeRoverServerCar(),
     new TaxiServerCar(),
     new VanServerCar(),
     new TruckServerCar(),

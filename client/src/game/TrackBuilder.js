@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { buildTrackAtmosphere } from './TrackAtmosphere.js';
+import { performanceTier } from './PerformanceConfig.js';
 
 /**
  * Factory - turns a track definition (spline control points + checkpoints)
@@ -65,16 +66,17 @@ export class TrackBuilder {
     const road = new THREE.Mesh(
       roadGeo,
       new THREE.MeshStandardMaterial({
-        map: isCauseway ? makeDustyRoadTexture() : null,
-        color: isWet ? 0x3a3e48 : isSnow ? 0xc8d4e0 : isCauseway ? 0xffffff : 0x5a5a64,
-        roughness: isWet ? 0.35 : isSnow ? 0.75 : isCauseway ? 0.97 : 0.88,
-        metalness: isWet ? 0.12 : isSnow ? 0.08 : 0,
+        map: isSnow ? makeSnowyRoadTexture() : isCauseway ? makeDustyRoadTexture() : null,
+        color: isWet ? 0x3a3e48 : isSnow ? 0xffffff : isCauseway ? 0xffffff : 0x5a5a64,
+        roughness: isWet ? 0.35 : isSnow ? 0.92 : isCauseway ? 0.97 : 0.88,
+        metalness: isWet ? 0.12 : isSnow ? 0.02 : 0,
       })
     );
     road.receiveShadow = true;
     this.group.add(road);
 
     if (isCauseway) this._addCausewayShoulders(frames, halfW, isSnow);
+    if (isSnow) this._addRoadSnowDrops(frames, halfW);
 
     this._addRoadStripes(frames, halfW, def.laneCount || 1);
 
@@ -161,6 +163,60 @@ export class TrackBuilder {
     shoulders.receiveShadow = true;
     shoulders.name = 'continuous-causeway-shoulders';
     this.group.add(shoulders);
+  }
+
+  /** Soft snow drifts and drop patches sitting on the asphalt. */
+  _addRoadSnowDrops(frames, halfW) {
+    const patchCount = {
+      low: Math.min(220, Math.round(frames.length * 0.08)),
+      medium: Math.min(420, Math.round(frames.length * 0.14)),
+      high: Math.min(700, Math.round(frames.length * 0.22)),
+    }[performanceTier];
+
+    const geo = new THREE.CircleGeometry(1, 7);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.55,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+    });
+    const mesh = new THREE.InstancedMesh(geo, mat, patchCount);
+    const m = new THREE.Matrix4();
+    const pos = new THREE.Vector3();
+    const quat = new THREE.Quaternion();
+    const scale = new THREE.Vector3();
+    const euler = new THREE.Euler();
+    const color = new THREE.Color();
+
+    for (let i = 0; i < patchCount; i++) {
+      const frame = frames[Math.floor(Math.random() * frames.length)];
+      const { p, normal, tangent } = frame;
+      // Mostly along the road edges — keep the center mostly clear asphalt.
+      const edgeBias = Math.sign(Math.random() - 0.5) * (0.55 + Math.random() ** 0.7 * 0.45);
+      const lateral = edgeBias * (halfW - 0.35);
+      pos.set(
+        p.x + normal.x * lateral + (Math.random() - 0.5) * 0.5,
+        0.022,
+        p.z + normal.z * lateral + (Math.random() - 0.5) * 0.5,
+      );
+      euler.set(-Math.PI / 2, 0, -Math.atan2(tangent.x, tangent.z) + (Math.random() - 0.5) * 0.8);
+      quat.setFromEuler(euler);
+      const s = 0.12 + Math.random() * 0.45;
+      scale.set(s * (0.7 + Math.random() * 0.7), s * (0.5 + Math.random() * 0.7), 1);
+      m.compose(pos, quat, scale);
+      mesh.setMatrixAt(i, m);
+      const brightness = 0.9 + Math.random() * 0.1;
+      color.setRGB(brightness, brightness, Math.min(1, brightness + 0.02));
+      mesh.setColorAt(i, color);
+    }
+
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    mesh.name = 'road-snow-drops';
+    this.group.add(mesh);
   }
 
   _addGate(checkpoint, color, isStart) {
@@ -481,6 +537,68 @@ function makeSnowShoulderTexture() {
   snowShoulderTexture.wrapT = THREE.RepeatWrapping;
   snowShoulderTexture.colorSpace = THREE.SRGBColorSpace;
   return snowShoulderTexture;
+}
+
+function makeSnowyRoadTexture() {
+  const size = 512;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d');
+
+  // Cold asphalt base — mostly visible.
+  ctx.fillStyle = '#525860';
+  ctx.fillRect(0, 0, size, size);
+
+  for (let i = 0; i < 2200; i++) {
+    const tone = 62 + Math.floor(Math.random() * 40);
+    ctx.fillStyle = `rgba(${tone}, ${tone + 2}, ${tone + 6}, ${0.05 + Math.random() * 0.12})`;
+    ctx.fillRect(Math.random() * size, Math.random() * size, 0.5 + Math.random() * 2, 0.5 + Math.random() * 2);
+  }
+
+  // Light frost dusting — sparse.
+  for (let i = 0; i < 55; i++) {
+    const x = Math.random() * size;
+    const y = Math.random() * size;
+    const rx = 6 + Math.random() * 22;
+    const ry = 3 + Math.random() * 10;
+    ctx.fillStyle = `rgba(245, 250, 255, ${0.04 + Math.random() * 0.08})`;
+    ctx.beginPath();
+    ctx.ellipse(x, y, rx, ry, Math.random() * Math.PI, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Sparse snow drops, mostly near the road edges.
+  for (let i = 0; i < 220; i++) {
+    const x = Math.random() * size;
+    const y = Math.random() * size;
+    const edge = Math.min(x, size - x) / (size * 0.5);
+    const edgeBoost = 1 - edge;
+    if (Math.random() > 0.2 + edgeBoost * 0.55) continue;
+    const r = 0.5 + Math.random() * 2.2 + edgeBoost * 1.2;
+    ctx.fillStyle = `rgba(255, 255, 255, ${0.2 + Math.random() * 0.35 + edgeBoost * 0.1})`;
+    ctx.beginPath();
+    ctx.ellipse(x, y, r, r * (0.45 + Math.random() * 0.55), Math.random() * Math.PI, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Soft tire clearings down the lanes.
+  for (const laneX of [size * 0.28, size * 0.72]) {
+    ctx.strokeStyle = 'rgba(70, 78, 88, 0.22)';
+    ctx.lineWidth = 12 + Math.random() * 5;
+    ctx.beginPath();
+    ctx.moveTo(laneX + (Math.random() - 0.5) * 8, 0);
+    for (let y = 0; y <= size; y += 24) {
+      ctx.lineTo(laneX + Math.sin(y * 0.04) * 5 + (Math.random() - 0.5) * 3, y);
+    }
+    ctx.stroke();
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(1, 2);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 4;
+  return texture;
 }
 
 function makeDustyRoadTexture() {

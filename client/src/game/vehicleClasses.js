@@ -76,6 +76,22 @@ class SuvCar extends AbstractCarDefinition {
   }
 }
 
+class RangeRoverCar extends AbstractCarDefinition {
+  constructor(base) {
+    super({
+      id: 'range-rover',
+      name: 'Range Rover',
+      file: `${base}models/cars/range-rover.glb`,
+      preview: `${base}img/cars/suv.png`,
+      defaultColor: 0x2c333a,
+      targetLength: 5.0,
+      tintStrength: 0,
+      stats: { speed: 76, power: 80, health: 96, grip: 72, weight: 96, boost: 64 },
+      engine: { osc1: 'sawtooth', osc2: 'triangle', baseHz: 28, pitchRange: 78, osc2Ratio: 1.18, volume: 0.17, filterHz: 540 },
+    });
+  }
+}
+
 class TaxiCar extends AbstractCarDefinition {
   constructor(base) {
     super({
@@ -128,6 +144,7 @@ export function createRegularCarProfiles(base) {
   return [
     new SedanCar(base),
     new SuvCar(base),
+    new RangeRoverCar(base),
     new TaxiCar(base),
     new VanCar(base),
     new TruckCar(base),

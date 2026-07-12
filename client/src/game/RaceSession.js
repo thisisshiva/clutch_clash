@@ -12,6 +12,7 @@ import { TrafficManager } from './TrafficManager.js';
 import { getCarStats, getCarDef } from './carCatalog.js';
 import { socketClient } from '../net/SocketClient.js';
 import { AutopilotDriver } from './AutopilotDriver.js';
+import { TireTrail } from './TireTrail.js';
 
 const NET_SEND_HZ = 20;
 const CAR_RADIUS = 1.05;
@@ -28,11 +29,11 @@ const CAMERA_MODES = [
 
 /** Auto-cycled cinematic presets for theater mode (slow lerp = long glide). */
 const THEATER_CAMERA_MODES = [
-  { id: 'hero', label: 'Hero', kind: 'chase', distance: 15, height: 5.2, lookAt: 1.15, fov: 56, lerp: 0.65, speedPull: 1.6, speedFov: 6 },
   { id: 'low', label: 'Low', kind: 'chase', distance: 8.5, height: 1.45, lookAt: 1.6, fov: 74, lerp: 0.7, speedPull: 0.5, speedFov: 8 },
   { id: 'side', label: 'Side', kind: 'side', distance: 11, height: 3.4, lateral: 10, lookAt: 1.05, fov: 54, lerp: 0.6, speedPull: 1.1, speedFov: 5 },
   { id: 'aerial', label: 'Aerial', kind: 'chase', distance: 26, height: 22, lookAt: 0.55, fov: 48, lerp: 0.5, speedPull: 2.4, speedFov: 3 },
   { id: 'orbit', label: 'Orbit', kind: 'orbit', distance: 14, height: 6, lookAt: 1.2, fov: 56, lerp: 0.5, orbitSpeed: 0.16, speedFov: 4 },
+  { id: 'hero', label: 'Hero', kind: 'chase', distance: 15, height: 5.2, lookAt: 1.15, fov: 56, lerp: 0.65, speedPull: 1.6, speedFov: 6 },
 ];
 
 /**
@@ -101,6 +102,7 @@ export class RaceSession {
     this._damageShakeTime = 0;
     this._damageShakeStrength = 0;
     this._autopilot = this.theaterMode ? new AutopilotDriver(trackDef) : null;
+    this._tireTrail = null;
     this._cameraCycleTimer = 0;
     this._cameraCycleInterval = 14;
     this._orbitAngle = 0;
@@ -137,6 +139,9 @@ export class RaceSession {
     this._theaterDriving = true;
     this._autopilot?.start();
     this._cameraCycleTimer = 0;
+    if (!this._tireTrail) {
+      this._tireTrail = new TireTrail(this.engine.scene);
+    }
   }
 
   respawn() {
@@ -235,6 +240,12 @@ export class RaceSession {
 
     this._orbitAngle += dt;
     this._applyTransform();
+    this._tireTrail?.update(
+      dt,
+      this.physics.position,
+      this.physics.heading,
+      this.physics.speed,
+    );
     this._updateBoostVfx(dt, this._theaterDriving ? 0.55 : 0);
     this._updateCamera(dt);
   }
@@ -570,6 +581,8 @@ export class RaceSession {
   dispose() {
     this._autopilot?.stop();
     this._autopilot = null;
+    this._tireTrail?.dispose();
+    this._tireTrail = null;
     this.engineSound?.dispose();
     this.damageVfx?.dispose();
     this.boostVfx?.dispose();

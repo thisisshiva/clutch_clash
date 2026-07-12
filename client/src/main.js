@@ -17,6 +17,7 @@ import { createMinimap } from './ui/Minimap.js';
 import { ResultsScreen } from './ui/ResultsScreen.js';
 import { FriendsScreen } from './ui/FriendsScreen.js';
 import { playTheaterIntro } from './ui/TheaterIntro.js';
+import { TheaterMusic } from './voice/TheaterMusic.js';
 import { getSelectedCarId } from './game/carPreferences.js';
 import { preloadCars } from './game/CarFactory.js';
 
@@ -27,6 +28,7 @@ const engine = new Engine(document.getElementById('game-canvas'));
 const input = new Input();
 const stateSync = new StateSync();
 const remotePlayers = new RemotePlayers(engine.scene, stateSync);
+const theaterMusic = new TheaterMusic('/audio/bring-it-together.mp3', { volume: 0.18 });
 
 let tracks = [];
 let room = null;          // latest room:update payload
@@ -215,6 +217,7 @@ function exitTheater() {
   theaterActive = false;
   clearInterval(theaterHudTimer);
   theaterHudTimer = null;
+  theaterMusic.stop();
   disposeSession();
   hud = null;
   minimap = null;
@@ -250,7 +253,7 @@ async function startTheaterMode(trackId) {
       engine,
       input,
       trackDef,
-      getSelectedCarId(),
+      'range-rover',
       stateSync,
       () => [],
       { theaterMode: true },
@@ -265,6 +268,7 @@ async function startTheaterMode(trackId) {
 
   hud?.showLoading(false);
   session.startTheaterDrive();
+  theaterMusic.start();
   const introWords = String(base.name || 'Theater')
     .replace(/[·•|/]/g, ' ')
     .split(/\s+/)
@@ -278,6 +282,7 @@ function cleanupRoom() {
   clearInterval(countdownTimer);
   clearInterval(theaterHudTimer);
   theaterActive = false;
+  theaterMusic.stop(true);
   disposeSession();
   voice?.stop();
   voiceState = 'off';
