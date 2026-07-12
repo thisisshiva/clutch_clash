@@ -6,12 +6,13 @@ import { HOME_CAR_IDS } from '../game/carCatalog.js';
 /**
  * @param {{
  *   onCreateRoom: () => void,
+ *   onTheaterMode: () => void,
  *   onJoinRoom: (code: string) => Promise<string|null>,
  *   onFriends: () => void,
  *   onLogout: () => void,
  * }} callbacks
  */
-export function MainMenuScreen({ onCreateRoom, onJoinRoom, onFriends, onLogout }) {
+export function MainMenuScreen({ onCreateRoom, onTheaterMode, onJoinRoom, onFriends, onLogout }) {
   const error = el('div.error-msg');
   const codeInput = el('input', {
     type: 'text', placeholder: 'ROOM CODE', maxLength: 6,
@@ -54,6 +55,7 @@ export function MainMenuScreen({ onCreateRoom, onJoinRoom, onFriends, onLogout }
       el('h2', {}, 'Garage'),
       CarPicker({ carIds: HOME_CAR_IDS }).node,
       el('button.btn', { style: 'margin-top:14px', onclick: onCreateRoom }, 'Create Room'),
+      el('button.btn.secondary', { style: 'margin-top:10px', onclick: onTheaterMode }, 'Theater Mode'),
     ],
   );
 }

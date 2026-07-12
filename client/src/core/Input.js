@@ -5,7 +5,7 @@ export class Input {
     this._down = (e) => {
       if (e.target instanceof HTMLInputElement) return;
       this.keys.add(e.code);
-      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'ShiftLeft', 'ShiftRight'].includes(e.code)) {
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'ShiftLeft', 'ShiftRight', 'Escape'].includes(e.code)) {
         e.preventDefault();
       }
     };

@@ -26,32 +26,48 @@ export function HUD({ onToggleVoice, onLeave, minimap }) {
     },
   }, 'Voice: Off');
 
+  const raceEl = el('div.hud-race', {}, el('span', {}, 'Lap ', lapEl), el('span', {}, 'CP ', cpEl));
+  const barsEl = el('div.hud-bars', {},
+    el('div.hud-bar-row', {},
+      el('span.hud-bar-label', {}, 'HP'),
+      el('div.hud-bar', {}, healthFill),
+    ),
+    el('div.hud-bar-row', {},
+      el('span.hud-bar-label', {}, 'NOS'),
+      el('div.hud-bar', {}, boostFill),
+    ),
+  );
+  const controlsEl = el('div.hud-controls', {},
+    voiceBtn,
+    el('button.btn.secondary.small', { onclick: onLeave }, 'Leave'),
+  );
+  const speedEl = el('div.hud-speed', {}, speedVal, el('div.unit', {}, 'KM/H'));
+  const hintEl = el('div.hud-hint', {}, 'W/S: drive · A/D: steer · Space: handbrake · Shift: boost · R: respawn · C: cycle camera');
+
   const node = el('div.hud', {},
     minimap?.node ?? null,
-    el('div.hud-race', {}, el('span', {}, 'Lap ', lapEl), el('span', {}, 'CP ', cpEl)),
-    el('div.hud-bars', {},
-      el('div.hud-bar-row', {},
-        el('span.hud-bar-label', {}, 'HP'),
-        el('div.hud-bar', {}, healthFill),
-      ),
-      el('div.hud-bar-row', {},
-        el('span.hud-bar-label', {}, 'NOS'),
-        el('div.hud-bar', {}, boostFill),
-      ),
-    ),
+    raceEl,
+    barsEl,
     standingsEl,
-    el('div.hud-controls', {},
-      voiceBtn,
-      el('button.btn.secondary.small', { onclick: onLeave }, 'Leave'),
-    ),
-    el('div.hud-speed', {}, speedVal, el('div.unit', {}, 'KM/H')),
+    controlsEl,
+    speedEl,
     loadingEl,
     countdownEl,
-    el('div.hud-hint', {}, 'W/S: drive · A/D: steer · Space: handbrake · Shift: boost · R: respawn · C: cycle camera'),
+    hintEl,
   );
 
   return {
     node,
+    setTheaterMode(enabled) {
+      node.classList.toggle('theater', !!enabled);
+      raceEl.style.display = enabled ? 'none' : '';
+      barsEl.style.display = enabled ? 'none' : '';
+      standingsEl.style.display = enabled ? 'none' : '';
+      controlsEl.style.display = enabled ? 'none' : '';
+      speedEl.style.display = enabled ? 'none' : '';
+      hintEl.style.display = enabled ? 'none' : '';
+      if (minimap?.node) minimap.node.style.display = enabled ? 'none' : '';
+    },
     setSpeed(kmh) {
       speedVal.textContent = String(kmh);
     },

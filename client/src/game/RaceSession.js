@@ -11,6 +11,7 @@ import { BoostVfx } from './BoostVfx.js';
 import { TrafficManager } from './TrafficManager.js';
 import { getCarStats, getCarDef } from './carCatalog.js';
 import { socketClient } from '../net/SocketClient.js';
+import { AutopilotDriver } from './AutopilotDriver.js';
 
 const NET_SEND_HZ = 20;
 const CAR_RADIUS = 1.05;
@@ -25,19 +26,28 @@ const CAMERA_MODES = [
   { id: 'side', label: 'Side', kind: 'side', distance: 8, height: 3.6, lateral: 6.5, lookAt: 1.0, fov: 60, lerp: 6, speedPull: 1.0, speedFov: 10 },
 ];
 
+/** Auto-cycled cinematic presets for theater mode (slow lerp = long glide). */
+const THEATER_CAMERA_MODES = [
+  { id: 'hero', label: 'Hero', kind: 'chase', distance: 15, height: 5.2, lookAt: 1.15, fov: 56, lerp: 0.65, speedPull: 1.6, speedFov: 6 },
+  { id: 'low', label: 'Low', kind: 'chase', distance: 8.5, height: 1.45, lookAt: 1.6, fov: 74, lerp: 0.7, speedPull: 0.5, speedFov: 8 },
+  { id: 'side', label: 'Side', kind: 'side', distance: 11, height: 3.4, lateral: 10, lookAt: 1.05, fov: 54, lerp: 0.6, speedPull: 1.1, speedFov: 5 },
+  { id: 'aerial', label: 'Aerial', kind: 'chase', distance: 26, height: 22, lookAt: 0.55, fov: 48, lerp: 0.5, speedPull: 2.4, speedFov: 3 },
+  { id: 'orbit', label: 'Orbit', kind: 'orbit', distance: 14, height: 6, lookAt: 1.2, fov: 56, lerp: 0.5, orbitSpeed: 0.16, speedFov: 4 },
+];
+
 /**
  * One race on one track: local car + physics + checkpoints + chase camera +
  * network state publishing + engine audio. Remote cars are handled by
  * RemotePlayers (shared with the lobby), this class only drives the update loop.
  */
 export class RaceSession {
-  static async create(engine, input, trackDef, carModelId, stateSync, getPlayers) {
-    const session = new RaceSession(engine, input, trackDef, carModelId, stateSync, getPlayers);
+  static async create(engine, input, trackDef, carModelId, stateSync, getPlayers, options = {}) {
+    const session = new RaceSession(engine, input, trackDef, carModelId, stateSync, getPlayers, options);
     const def = getCarDef(carModelId);
     session.car = await createCar(carModelId, def.defaultColor, { preserveTextures: true });
     engine.scene.add(session.car);
     session.boostVfx = new BoostVfx(session.car, def.defaultColor);
-    await session._initTraffic();
+    if (!options.theaterMode) await session._initTraffic();
     session.damageVfx = new DamageVfx(session.car);
     session.physics.reset(session._spawn.position, session._spawn.heading);
     session._applyTransform();
@@ -45,7 +55,7 @@ export class RaceSession {
     return session;
   }
 
-  constructor(engine, input, trackDef, carModelId, stateSync, getPlayers) {
+  constructor(engine, input, trackDef, carModelId, stateSync, getPlayers, options = {}) {
     this.engine = engine;
     this.input = input;
     this.trackDef = trackDef;
@@ -53,9 +63,10 @@ export class RaceSession {
     this.getPlayers = getPlayers;
     this.carStats = getCarStats(carModelId);
     this.carDef = getCarDef(carModelId);
+    this.theaterMode = !!options.theaterMode;
 
     this._clearEnvironment = applyTrackEnvironment(engine, trackDef.atmosphere, trackDef.length);
-    this.track = new TrackBuilder(trackDef);
+    this.track = new TrackBuilder(trackDef, { showGates: !this.theaterMode });
     engine.scene.add(this.track.group);
 
     this.car = null;
@@ -73,6 +84,8 @@ export class RaceSession {
     this.engineSound = null;
     this._netAccumulator = 0;
     this._camPos = new THREE.Vector3();
+    this._camFollowCar = new THREE.Vector3();
+    this._lookAtPos = new THREE.Vector3();
     this._spawn = { position: trackDef.spawnPoints[0].position, heading: trackDef.spawnPoints[0].heading };
     this._crashCooldowns = new Map();
     this._barrierCooldown = 0;
@@ -80,18 +93,25 @@ export class RaceSession {
     this._wrecking = false;
     this._wreckTimer = 0;
     this._camShake = 0;
-    this._cameraMode = 0;
+    this._cameraModes = this.theaterMode ? THEATER_CAMERA_MODES : CAMERA_MODES;
+    this._cameraMode = this.theaterMode ? 0 : 0;
     this._defaultFov = engine.camera.fov;
-    this._targetFov = CAMERA_MODES[0].fov;
+    this._targetFov = this._cameraModes[0].fov;
     this._traffic = null;
     this._damageShakeTime = 0;
     this._damageShakeStrength = 0;
+    this._autopilot = this.theaterMode ? new AutopilotDriver(trackDef) : null;
+    this._cameraCycleTimer = 0;
+    this._cameraCycleInterval = 14;
+    this._orbitAngle = 0;
+    this._theaterDriving = false;
 
     this.onCheckpointPass = null;
     this.onBarrierHit = null;
     this.onCarCrash = null;
     this.onHealthDepleted = null;
     this.onCameraChange = null;
+    this.onTheaterExit = null;
 
     this.checkpoints.onPass = (index) => this.onCheckpointPass?.(index);
   }
@@ -111,6 +131,14 @@ export class RaceSession {
     }
   }
 
+  /** Begin autopilot + cinematic camera cycling after the theater intro. */
+  startTheaterDrive() {
+    if (!this.theaterMode) return;
+    this._theaterDriving = true;
+    this._autopilot?.start();
+    this._cameraCycleTimer = 0;
+  }
+
   respawn() {
     const point = this.checkpoints.getRespawnPoint(this._spawn);
     this.physics.reset(point.position, point.heading);
@@ -120,6 +148,12 @@ export class RaceSession {
 
   update(dt) {
     this.track.update(dt);
+
+    if (this.theaterMode) {
+      this._updateTheater(dt);
+      return;
+    }
+
     const controls = this.controlsEnabled && !this.finished
       ? {
           throttle: this.input.throttle,
@@ -182,6 +216,27 @@ export class RaceSession {
         h: this.physics.health,
       });
     }
+  }
+
+  _updateTheater(dt) {
+    if (this.input.consume('Escape') || this.input.consume('KeyQ')) {
+      this.onTheaterExit?.();
+      return;
+    }
+
+    if (this._theaterDriving) {
+      this._autopilot?.update(dt, this.physics);
+      this._cameraCycleTimer += dt;
+      if (this._cameraCycleTimer >= this._cameraCycleInterval) {
+        this._cameraCycleTimer = 0;
+        this._toggleCamera();
+      }
+    }
+
+    this._orbitAngle += dt;
+    this._applyTransform();
+    this._updateBoostVfx(dt, this._theaterDriving ? 0.55 : 0);
+    this._updateCamera(dt);
   }
 
   _checkBarrierCollision() {
@@ -335,21 +390,39 @@ export class RaceSession {
   }
 
   _toggleCamera() {
-    this._cameraMode = (this._cameraMode + 1) % CAMERA_MODES.length;
+    this._cameraMode = (this._cameraMode + 1) % this._cameraModes.length;
     const preset = this._cameraPreset();
     this._targetFov = preset.fov;
+    // Seed orbit from the current camera so it doesn't jump to a random side.
+    if (preset.kind === 'orbit') {
+      const dx = this._camPos.x - this.physics.position.x;
+      const dz = this._camPos.z - this.physics.position.z;
+      const speed = preset.orbitSpeed ?? 0.2;
+      this._orbitAngle = Math.atan2(dx, dz) / Math.max(speed, 0.01);
+    }
     this.onCameraChange?.(preset.label);
   }
 
   _cameraPreset() {
-    return CAMERA_MODES[this._cameraMode];
+    return this._cameraModes[this._cameraMode];
   }
 
-  _cameraLookAt(preset) {
+  _cameraLookAtTarget(preset) {
+    const h = this.physics.heading;
     const px = this.car.position.x;
     const py = this.car.position.y;
     const pz = this.car.position.z;
-    return new THREE.Vector3(px, py + preset.lookAt, pz);
+    let ahead = 0;
+    if (this.theaterMode) {
+      if (preset.kind === 'lead') ahead = -1.2;
+      else if (preset.kind === 'chase' && preset.height > 12) ahead = 6;
+      else ahead = 2.4;
+    }
+    return new THREE.Vector3(
+      px + Math.sin(h) * ahead,
+      py + preset.lookAt,
+      pz + Math.cos(h) * ahead,
+    );
   }
 
   _updateCamera(dt) {
@@ -358,8 +431,40 @@ export class RaceSession {
     const maxSpd = 58 * (0.75 + this.carStats.speed / 80 * 0.35);
     const speedRatio = Math.min(Math.abs(this.physics.speed) / Math.max(maxSpd, 1), 1);
     const target = this._cameraTarget(preset, speedRatio);
+    const lookTarget = this._cameraLookAtTarget(preset);
     const lerpSpeed = preset.lerp ?? 5;
-    this._camPos.lerp(target, Math.min(dt * lerpSpeed, 1));
+
+    if (this.theaterMode) {
+      const cx = this.physics.position.x;
+      const cy = this.physics.position.y;
+      const cz = this.physics.position.z;
+      const dx = cx - this._camFollowCar.x;
+      const dy = cy - this._camFollowCar.y;
+      const dz = cz - this._camFollowCar.z;
+      // Inherit car motion so framing stays locked while angles ease.
+      this._camPos.x += dx;
+      this._camPos.y += dy;
+      this._camPos.z += dz;
+      this._lookAtPos.x += dx;
+      this._lookAtPos.y += dy;
+      this._lookAtPos.z += dz;
+      this._camFollowCar.set(cx, cy, cz);
+
+      const blend = 1 - Math.exp(-lerpSpeed * dt);
+      this._camPos.lerp(target, blend);
+      this._lookAtPos.lerp(lookTarget, blend);
+
+      // Lift the path if a long cut would pass through the car (prevents flicker).
+      const toCarX = cx - this._camPos.x;
+      const toCarZ = cz - this._camPos.z;
+      const planar = Math.hypot(toCarX, toCarZ);
+      if (planar < 7) {
+        this._camPos.y = Math.max(this._camPos.y, cy + 7 + (7 - planar) * 0.8);
+      }
+    } else {
+      this._camPos.lerp(target, Math.min(dt * lerpSpeed, 1));
+      this._lookAtPos.copy(lookTarget);
+    }
 
     if (this._camShake > 0) {
       this._camShake = Math.max(0, this._camShake - dt * 1.8);
@@ -370,14 +475,16 @@ export class RaceSession {
     }
 
     cam.position.copy(this._camPos);
-    const lookAt = this._cameraLookAt(preset);
-    cam.lookAt(lookAt.x, lookAt.y, lookAt.z);
+    cam.lookAt(this._lookAtPos.x, this._lookAtPos.y, this._lookAtPos.z);
 
     const speedFovBoost = preset.speedFov ?? 10;
     const boostFov = this.physics.boostActive ? Math.min(8, speedFovBoost * 0.55) : 0;
     this._targetFov = preset.fov + speedRatio * speedFovBoost + boostFov;
     if (Math.abs(cam.fov - this._targetFov) > 0.05) {
-      cam.fov += (this._targetFov - cam.fov) * Math.min(dt * 6, 1);
+      const fovBlend = this.theaterMode
+        ? (1 - Math.exp(-1.1 * dt))
+        : Math.min(dt * 6, 1);
+      cam.fov += (this._targetFov - cam.fov) * fovBlend;
       cam.updateProjectionMatrix();
     }
   }
@@ -391,6 +498,25 @@ export class RaceSession {
     const cos = Math.cos(h);
     const rightX = cos;
     const rightZ = -sin;
+
+    if (preset.kind === 'orbit') {
+      const dist = preset.distance ?? 13;
+      const angle = this._orbitAngle * (preset.orbitSpeed ?? 0.2);
+      return new THREE.Vector3(
+        px + Math.sin(angle) * dist,
+        py + preset.height,
+        pz + Math.cos(angle) * dist,
+      );
+    }
+
+    if (preset.kind === 'lead') {
+      const dist = Math.max(6, (preset.distance ?? 14) - speedRatio * (preset.speedPull ?? 1));
+      return new THREE.Vector3(
+        px + sin * dist,
+        py + preset.height,
+        pz + cos * dist,
+      );
+    }
 
     if (preset.kind === 'side') {
       const dist = Math.max(4, (preset.distance ?? 8) - speedRatio * (preset.speedPull ?? 1));
@@ -408,9 +534,16 @@ export class RaceSession {
   }
 
   _snapCamera() {
+    this._camFollowCar.set(
+      this.physics.position.x,
+      this.physics.position.y,
+      this.physics.position.z,
+    );
     this._camPos.copy(this._cameraTarget());
+    this._lookAtPos.copy(this._cameraLookAtTarget(this._cameraPreset()));
     const cam = this.engine.camera;
     cam.position.copy(this._camPos);
+    cam.lookAt(this._lookAtPos.x, this._lookAtPos.y, this._lookAtPos.z);
     cam.fov = this._targetFov;
     cam.updateProjectionMatrix();
   }
@@ -435,6 +568,8 @@ export class RaceSession {
   }
 
   dispose() {
+    this._autopilot?.stop();
+    this._autopilot = null;
     this.engineSound?.dispose();
     this.damageVfx?.dispose();
     this.boostVfx?.dispose();

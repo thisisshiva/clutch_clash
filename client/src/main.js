@@ -16,6 +16,7 @@ import { HUD } from './ui/HUD.js';
 import { createMinimap } from './ui/Minimap.js';
 import { ResultsScreen } from './ui/ResultsScreen.js';
 import { FriendsScreen } from './ui/FriendsScreen.js';
+import { playTheaterIntro } from './ui/TheaterIntro.js';
 import { getSelectedCarId } from './game/carPreferences.js';
 import { preloadCars } from './game/CarFactory.js';
 
@@ -37,6 +38,8 @@ let resultsView = null;
 let voice = null;
 let voiceState = 'off';
 let countdownTimer = null;
+let theaterActive = false;
+let theaterHudTimer = null;
 
 // Slow orbit camera when no race is running (menu background vibes).
 let menuAngle = 0;
@@ -208,8 +211,73 @@ function disposeSession() {
   session = null;
 }
 
+function exitTheater() {
+  theaterActive = false;
+  clearInterval(theaterHudTimer);
+  theaterHudTimer = null;
+  disposeSession();
+  hud = null;
+  minimap = null;
+  setRoomBadge(null);
+  showMenu();
+}
+
+async function startTheaterMode(trackId) {
+  const base = resolveTrackDef(trackId);
+  if (!base?.controlPoints) {
+    toast('Track data missing — refresh and try again');
+    return;
+  }
+
+  theaterActive = true;
+  clearInterval(countdownTimer);
+  clearInterval(theaterHudTimer);
+  resultsView?.cancel?.();
+  resultsView = null;
+  disposeSession();
+  remotePlayers.clear();
+  stateSync.clear();
+  room = null;
+  lobby = null;
+  setRoomBadge(null);
+
+  const trackDef = { ...base, theaterMode: true };
+  showHud(trackDef, { theater: true });
+  hud?.showLoading(true);
+
+  try {
+    session = await RaceSession.create(
+      engine,
+      input,
+      trackDef,
+      getSelectedCarId(),
+      stateSync,
+      () => [],
+      { theaterMode: true },
+    );
+    session.onTheaterExit = exitTheater;
+  } catch (err) {
+    console.error('Theater start failed', err);
+    toast('Failed to load theater — try again');
+    exitTheater();
+    return;
+  }
+
+  hud?.showLoading(false);
+  session.startTheaterDrive();
+  const introWords = String(base.name || 'Theater')
+    .replace(/[·•|/]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word.toUpperCase());
+  await playTheaterIntro(introWords.length ? introWords : ['THEATER']);
+  if (!theaterActive || !session) return;
+}
+
 function cleanupRoom() {
   clearInterval(countdownTimer);
+  clearInterval(theaterHudTimer);
+  theaterActive = false;
   disposeSession();
   voice?.stop();
   voiceState = 'off';
@@ -253,6 +321,7 @@ function showLogin() {
 async function showMenu() {
   showScreen(MainMenuScreen({
     onCreateRoom: showMapSelect,
+    onTheaterMode: showTheaterSelect,
     onJoinRoom: async (code) => {
       const res = await socketClient.request('room:join', {
         code,
@@ -278,10 +347,21 @@ async function showMenu() {
   }
 }
 
+function showTheaterSelect() {
+  showScreen(MapSelectScreen({
+    tracks,
+    theaterOnly: true,
+    onBack: showMenu,
+    onSelect: () => {},
+    onTheater: (trackId) => startTheaterMode(trackId),
+  }));
+}
+
 function showMapSelect() {
   showScreen(MapSelectScreen({
     tracks,
     onBack: showMenu,
+    onTheater: (trackId) => startTheaterMode(trackId),
     onSelect: async (trackId) => {
       const res = await socketClient.request('room:create', {
         trackId,
@@ -328,13 +408,22 @@ function showLobby() {
   showScreen(lobby.node);
 }
 
-function showHud(trackDef) {
+function showHud(trackDef, { theater = false } = {}) {
   lobby = null;
-  minimap = trackDef ? createMinimap(trackDef) : null;
-  hud = HUD({ onToggleVoice: toggleVoice, onLeave: leaveRoom, minimap: minimap ?? undefined });
+  clearInterval(theaterHudTimer);
+  theaterHudTimer = null;
+  minimap = (!theater && trackDef) ? createMinimap(trackDef) : null;
+  hud = HUD({
+    onToggleVoice: toggleVoice,
+    onLeave: theater ? exitTheater : leaveRoom,
+    minimap: minimap ?? undefined,
+  });
   hud.setVoiceState(voiceState);
+  if (theater) hud.setTheaterMode(true);
   showScreen(hud.node);
-  updateStandings();
+  if (!theater) updateStandings();
+
+  if (theater) return;
 
   const speedTimer = setInterval(() => {
     if (!session || !hud) return clearInterval(speedTimer);

@@ -177,9 +177,9 @@ function createSnow(scene) {
     geo,
     new THREE.PointsMaterial({
       color: 0xe8f4ff,
-      size: 0.55,
+      size: 0.16,
       transparent: true,
-      opacity: 0.7,
+      opacity: 0.65,
       depthWrite: false,
     }),
   );

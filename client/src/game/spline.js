@@ -28,6 +28,16 @@ export function splinePoint(points, t, closed = true) {
   return out;
 }
 
+export function splineTangent(points, t, closed = true) {
+  const eps = 1e-4;
+  const a = splinePoint(points, t - eps, closed);
+  const b = splinePoint(points, t + eps, closed);
+  const dx = b[0] - a[0];
+  const dz = b[2] - a[2];
+  const len = Math.hypot(dx, dz) || 1;
+  return [dx / len, dz / len];
+}
+
 export function sampleTrackLoop(controlPoints, samples = 120, closed = true) {
   const pts = [];
   for (let i = 0; i <= samples; i++) {

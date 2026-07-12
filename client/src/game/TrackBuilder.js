@@ -7,8 +7,13 @@ import { buildTrackAtmosphere } from './TrackAtmosphere.js';
  * and checkpoint arches. Also exposes fast on-track / progress queries.
  */
 export class TrackBuilder {
-  constructor(trackDef) {
+  /**
+   * @param {object} trackDef
+   * @param {{ showGates?: boolean }} [options]
+   */
+  constructor(trackDef, options = {}) {
     this.def = trackDef;
+    this.showGates = options.showGates !== false;
     this.curve = new THREE.CatmullRomCurve3(
       trackDef.controlPoints.map(([x, y, z]) => new THREE.Vector3(x, y, z)),
       trackDef.closed !== false, 'catmullrom', 0.5
@@ -78,9 +83,11 @@ export class TrackBuilder {
     }
 
     const startColor = isSnow ? 0xb8d4ff : isCauseway ? 0xf0f4ff : 0xff2244;
-    this._addGate(this.def.checkpoints[0], startColor, true);
-    for (let i = 1; i < this.def.checkpoints.length; i++) {
-      this._addGate(this.def.checkpoints[i], 0x22ddff, false);
+    if (this.showGates) {
+      this._addGate(this.def.checkpoints[0], startColor, true);
+      for (let i = 1; i < this.def.checkpoints.length; i++) {
+        this._addGate(this.def.checkpoints[i], 0x22ddff, false);
+      }
     }
 
     this.group.add(buildTrackAtmosphere(this.curve, def));

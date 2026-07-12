@@ -381,7 +381,7 @@ async function addSkyProps(group, curve, rng, animation) {
 
   for (let i = 0; i < DENSITY.flakes; i++) {
     jobs.push((async () => {
-      const flake = await makeAsset('snowflake.glb', 1.4 + rng() * 2.2, { grounded: false });
+      const flake = await makeAsset('snowflake.glb', 0.22 + rng() * 0.28, { grounded: false });
       flake.traverse((child) => {
         if (!child.isMesh || !child.material) return;
         const icy = (material) => {
