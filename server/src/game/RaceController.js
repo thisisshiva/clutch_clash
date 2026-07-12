@@ -1,4 +1,5 @@
 import { ROOM_STATUS } from '../rooms/Room.js';
+import { getCarStats } from './carCatalog.js';
 
 const COUNTDOWN_MS = 3000;
 const RACE_TIMEOUT_MS = 10 * 60 * 1000; // safety: end race after 10 min
@@ -35,12 +36,16 @@ export class RaceController {
         place: null,
         spawnSlot: slot,
       };
-      player.state = { p: [...spawn.position], r: spawn.heading, s: 0 };
+      player.state = {
+        p: [...spawn.position],
+        r: spawn.heading,
+        s: 0,
+        h: getCarStats(player.carModel).health,
+      };
       slot++;
     }
 
     const startAt = Date.now() + COUNTDOWN_MS;
-    this.onEvent('race:countdown', { startAt, countdownMs: COUNTDOWN_MS });
 
     this.timers.push(setTimeout(() => {
       room.status = ROOM_STATUS.RACING;
@@ -49,6 +54,8 @@ export class RaceController {
     }, COUNTDOWN_MS));
 
     this.timers.push(setTimeout(() => this.endRace(), COUNTDOWN_MS + RACE_TIMEOUT_MS));
+
+    return { startAt, countdownMs: COUNTDOWN_MS };
   }
 
   /**
@@ -76,6 +83,11 @@ export class RaceController {
     }
 
     progress.nextCheckpoint = (index + 1) % track.checkpointCount;
+
+    if (track.closed === false && index === track.checkpointCount - 1) {
+      this.finishPlayer(player);
+      return { ok: true, finished: true, lap: 1 };
+    }
 
     // Crossing the start/finish gate (index 0) after the final checkpoint
     // completes a lap.

@@ -63,7 +63,7 @@ export function LoginScreen({ onDone }) {
         if (username.length < 3) throw new Error('Username must be at least 3 characters');
         await authService.signUp(emailInput.value.trim(), passInput.value, username);
       }
-      onDone();
+      await onDone();
     } catch (e) {
       error.textContent = e.message;
     } finally {

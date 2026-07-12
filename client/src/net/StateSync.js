@@ -28,7 +28,7 @@ export class StateSync {
         buf = [];
         this.buffers.set(id, buf);
       }
-      buf.push({ t: snapshot.t, p: state.p, r: state.r, s: state.s });
+      buf.push({ t: snapshot.t, p: state.p, r: state.r, s: state.s, h: state.h });
       if (buf.length > BUFFER_MAX) buf.shift();
     }
   }
@@ -69,6 +69,7 @@ export class StateSync {
           ],
           r: lerpAngle(a.r, b.r, u),
           s: a.s + (b.s - a.s) * u,
+          h: a.h != null && b.h != null ? a.h + (b.h - a.h) * u : (b.h ?? a.h),
         };
       }
     }

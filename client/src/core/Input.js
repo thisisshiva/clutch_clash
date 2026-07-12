@@ -5,7 +5,7 @@ export class Input {
     this._down = (e) => {
       if (e.target instanceof HTMLInputElement) return;
       this.keys.add(e.code);
-      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'ShiftLeft', 'ShiftRight'].includes(e.code)) {
         e.preventDefault();
       }
     };
@@ -30,6 +30,14 @@ export class Input {
 
   get handbrake() {
     return this.keys.has('Space');
+  }
+
+  get boost() {
+    return this.keys.has('ShiftLeft') || this.keys.has('ShiftRight');
+  }
+
+  consumeBoost() {
+    return this.consume('ShiftLeft') || this.consume('ShiftRight');
   }
 
   /** One-shot key check with consume semantics. */

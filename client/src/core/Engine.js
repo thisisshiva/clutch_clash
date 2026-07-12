@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { performanceConfig } from '../game/PerformanceConfig.js';
 
 /**
  * Owns the renderer, scene graph, camera and the render loop.
@@ -12,13 +13,15 @@ export class Engine {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.35;
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x0b1026);
-    this.scene.fog = new THREE.Fog(0x0b1026, 250, 700);
+    this.scene.background = new THREE.Color(0x8ecbff);
+    this.scene.fog = new THREE.Fog(0xa6d8ff, 2200, 20000);
 
     this.camera = new THREE.PerspectiveCamera(
-      70, window.innerWidth / window.innerHeight, 0.1, 1200
+      70, window.innerWidth / window.innerHeight, 0.5, 16000
     );
     this.camera.position.set(0, 8, -14);
 
@@ -35,48 +38,42 @@ export class Engine {
   }
 
   _setupEnvironment() {
-    const ambient = new THREE.HemisphereLight(0x8899ff, 0x223311, 0.7);
+    const ambient = new THREE.HemisphereLight(0xbfe3ff, 0x6aa05d, 1.12);
     this.scene.add(ambient);
 
-    const sun = new THREE.DirectionalLight(0xffeedd, 1.6);
+    const sun = new THREE.DirectionalLight(0xfff8ee, 2.4);
     sun.position.set(120, 180, 80);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
-    sun.shadow.camera.left = -400;
-    sun.shadow.camera.right = 400;
-    sun.shadow.camera.top = 400;
-    sun.shadow.camera.bottom = -400;
-    sun.shadow.camera.far = 600;
+    sun.shadow.mapSize.set(performanceConfig.shadowMapSize, performanceConfig.shadowMapSize);
+    sun.shadow.camera.left = -2800;
+    sun.shadow.camera.right = 2800;
+    sun.shadow.camera.top = 2800;
+    sun.shadow.camera.bottom = -2800;
+    sun.shadow.camera.far = 9000;
+    // Reduce black shimmer/flicker from long-range shadow acne.
+    sun.shadow.bias = -0.00008;
+    sun.shadow.normalBias = 0.045;
     this.scene.add(sun);
 
-    // Ground plane (grass).
+    const fill = new THREE.DirectionalLight(0xd8eeff, 0.85);
+    fill.position.set(-90, 70, -110);
+    this.scene.add(fill);
+
+    const moon = new THREE.DirectionalLight(0xc8d8ff, 0);
+    moon.position.set(-90, 140, 70);
+    this.scene.add(moon);
+
     const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(3000, 3000),
-      new THREE.MeshStandardMaterial({ color: 0x1c3a1c, roughness: 1 })
+      new THREE.PlaneGeometry(20000, 20000),
+      new THREE.MeshStandardMaterial({ color: 0x5daa5d, roughness: 0.95 })
     );
     ground.rotation.x = -Math.PI / 2;
     ground.position.y = -0.05;
     ground.receiveShadow = true;
     this.scene.add(ground);
 
-    // Star field for night-race vibes.
-    const starCount = 600;
-    const positions = new Float32Array(starCount * 3);
-    for (let i = 0; i < starCount; i++) {
-      const r = 900;
-      const theta = Math.random() * Math.PI * 2;
-      const phi = Math.acos(1 - Math.random() * 0.7);
-      positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
-      positions[i * 3 + 1] = r * Math.cos(phi);
-      positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
-    }
-    const starGeo = new THREE.BufferGeometry();
-    starGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    this.stars = new THREE.Points(
-      starGeo,
-      new THREE.PointsMaterial({ color: 0xbbccff, size: 1.6, sizeAttenuation: false })
-    );
-    this.scene.add(this.stars);
+    this._env = { ambient, sun, fill, moon, ground };
+    this.clearTrackEnvironment = null;
   }
 
   onUpdate(fn) {

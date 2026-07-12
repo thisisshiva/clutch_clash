@@ -1,5 +1,6 @@
 import { roomManager } from '../rooms/RoomManager.js';
 import { ROOM_STATUS } from '../rooms/Room.js';
+import { getCarStats } from '../game/carCatalog.js';
 import { broadcastRoom } from './lobbyHandlers.js';
 
 export function registerRaceHandlers(io, socket) {
@@ -8,10 +9,12 @@ export function registerRaceHandlers(io, socket) {
     if (!room || room.hostId !== socket.id) return;
     if (room.status !== ROOM_STATUS.LOBBY && room.status !== ROOM_STATUS.FINISHED) return;
 
-    room.startRace((event, payload) => io.to(room.code).emit(event, payload));
+    const countdown = room.startRace((event, payload) => io.to(room.code).emit(event, payload));
     broadcastRoom(io, room);
-    // Send each player their assigned spawn slot.
+    if (countdown) io.to(room.code).emit('race:countdown', countdown);
+    // Send each human player their assigned spawn slot.
     for (const player of room.players.values()) {
+      if (player.isBot) continue;
       io.to(player.id).emit('race:spawn', {
         slot: player.progress.spawnSlot,
         position: player.state.p,
@@ -32,6 +35,7 @@ export function registerRaceHandlers(io, socket) {
       p: [Number(state.p[0]) || 0, Number(state.p[1]) || 0, Number(state.p[2]) || 0],
       r: Number(state.r) || 0,
       s: Number(state.s) || 0,
+      h: Number(state.h) || player.state?.h || getCarStats(player.carModel).health,
     };
   });
 

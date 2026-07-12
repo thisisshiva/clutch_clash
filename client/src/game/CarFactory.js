@@ -1,93 +1,225 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DEFAULT_CAR_ID, getCarDef, CAR_CATALOG } from './carCatalog.js';
 
-// Shared geometries - built once, reused for every car (local + remote).
-let shared = null;
+const loader = new GLTFLoader();
+/** @type {Map<string, THREE.Group>} */
+const templateCache = new Map();
+/** @type {Map<string, THREE.Group>} */
+const coloredTemplateCache = new Map();
+const loadPromises = new Map();
 
-function getSharedGeometries() {
-  if (shared) return shared;
-  shared = {
-    body: new THREE.BoxGeometry(1.5, 0.42, 4.4),
-    nose: new THREE.BoxGeometry(0.7, 0.3, 1.4),
-    cockpit: new THREE.CapsuleGeometry(0.34, 0.9, 4, 8),
-    frontWing: new THREE.BoxGeometry(2.2, 0.1, 0.55),
-    rearWing: new THREE.BoxGeometry(2.0, 0.1, 0.5),
-    wingPole: new THREE.BoxGeometry(0.12, 0.5, 0.12),
-    wheel: new THREE.CylinderGeometry(0.44, 0.44, 0.42, 18),
-    halo: new THREE.TorusGeometry(0.42, 0.05, 6, 16, Math.PI),
-    tyreMat: new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 }),
-    darkMat: new THREE.MeshStandardMaterial({ color: 0x222226, roughness: 0.6 }),
-  };
-  return shared;
+const PAINT_SKIP = /wheel|tire|tyre|glass|window|light|lamp|chrome|rim|under|shadow/i;
+const NON_ROLLING_WHEEL = /spare|extra|holder|carrier|cover|decoration|detail/i;
+
+function meshContextNames(mesh) {
+  let names = (mesh.name || '').toLowerCase();
+  let parent = mesh.parent;
+  while (parent) {
+    names += ` ${(parent.name || '').toLowerCase()}`;
+    parent = parent.parent;
+  }
+  return names;
+}
+
+function isDriveWheel(mesh) {
+  const name = (mesh.name || '').toLowerCase();
+  const context = meshContextNames(mesh);
+  if (NON_ROLLING_WHEEL.test(context)) return false;
+  // Kenney SUV spare tire mounted on the rear door.
+  if (name === 'wheel-back') return false;
+  return /wheel|tire|tyre|rim/.test(name);
+}
+
+function findWheels(root) {
+  const wheels = [];
+  const seen = new Set();
+  root.traverse((child) => {
+    if (!child.isMesh || !isDriveWheel(child) || seen.has(child.uuid)) return;
+    seen.add(child.uuid);
+    wheels.push(child);
+  });
+  return wheels;
+}
+
+/** Spin road wheels and steer only the front axle. */
+export function spinWheels(wheels, speed, steerVisual = 0) {
+  const spin = speed * 0.06;
+  for (const wheel of wheels) {
+    wheel.rotation.x += spin;
+    if (/front/i.test(wheel.name || '')) {
+      wheel.rotation.y = steerVisual;
+    }
+  }
+}
+
+function shouldPaint(mesh, mat) {
+  const labels = `${mesh.name || ''} ${mat?.name || ''}`.toLowerCase();
+  if (PAINT_SKIP.test(labels)) return false;
+  if (mat?.transparent && mat.opacity < 0.45) return false;
+  return true;
+}
+
+function paintMaterial(mat, tint) {
+  const m = mat.clone();
+  m.map = null;
+  m.alphaMap = null;
+  m.emissiveMap = null;
+  if (m.color) m.color.copy(tint);
+  if ('metalness' in m) m.metalness = 0.38;
+  if ('roughness' in m) m.roughness = 0.42;
+  m.userData = { ...(m.userData || {}), isPaint: true };
+  m.needsUpdate = true;
+  return m;
+}
+
+function paintMaterialPreserve(mat, tint, strength) {
+  const m = mat.clone();
+  if (m.color) m.color.lerp(tint, strength);
+  m.userData = { ...(m.userData || {}), isPaint: true };
+  m.needsUpdate = true;
+  return m;
+}
+
+/** Apply a solid team color to all paintable body meshes. */
+export function applyCarColor(car, color, { preserveTextures = false, strength = 0.3 } = {}) {
+  const tint = new THREE.Color(color ?? 0xffffff);
+  car.traverse((child) => {
+    if (!child.isMesh) return;
+    const paint = (mat) => {
+      if (!shouldPaint(child, mat)) return mat.clone();
+      return preserveTextures
+        ? paintMaterialPreserve(mat, tint, strength)
+        : paintMaterial(mat, tint);
+    };
+    if (Array.isArray(child.material)) {
+      child.material = child.material.map(paint);
+    } else if (child.material) {
+      child.material = paint(child.material);
+    }
+  });
+  car.userData.color = color;
+  car.userData.baseColor = new THREE.Color(color);
+}
+
+/** Darken / desaturate paint as the car takes damage. */
+export function applyDamageWear(car, healthRatio) {
+  const base = car.userData.baseColor;
+  if (!base) return;
+  const wear = 1 - healthRatio;
+  const scratch = new THREE.Color(0x333333);
+  car.traverse((child) => {
+    if (!child.isMesh || !child.material?.color) return;
+    if (/wheel|tire|tyre|glass|window|light|lamp|chrome|rim/i.test(child.name || '')) return;
+    const mats = Array.isArray(child.material) ? child.material : [child.material];
+    for (const mat of mats) {
+      if (!mat.color || !mat.userData?.isPaint) continue;
+      mat.color.copy(base).lerp(scratch, wear * 0.55);
+    }
+  });
+}
+
+function fitModel(model, def) {
+  const box = new THREE.Box3().setFromObject(model);
+  const size = new THREE.Vector3();
+  box.getSize(size);
+  const length = Math.max(size.x, size.z);
+  const scale = (def.targetLength ?? 4.2) / Math.max(length, 0.001);
+  model.scale.setScalar(scale);
+
+  const fitted = new THREE.Box3().setFromObject(model);
+  const center = new THREE.Vector3();
+  fitted.getCenter(center);
+  model.position.x -= center.x;
+  model.position.z -= center.z;
+  model.position.y -= fitted.min.y;
+}
+
+async function loadTemplate(carId) {
+  const id = getCarDef(carId).id;
+  if (templateCache.has(id)) return templateCache.get(id);
+  if (loadPromises.has(id)) return loadPromises.get(id);
+
+  const promise = (async () => {
+    const def = getCarDef(id);
+    const gltf = await loader.loadAsync(def.file);
+    const model = gltf.scene;
+    model.rotation.y = def.rotY ?? 0;
+    fitModel(model, def);
+    model.traverse((child) => {
+      if (child.isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
+    const wrapper = new THREE.Group();
+    wrapper.add(model);
+    templateCache.set(id, wrapper);
+    loadPromises.delete(id);
+    return wrapper;
+  })();
+
+  loadPromises.set(id, promise);
+  return promise;
+}
+
+async function getColoredTemplate(carId, color) {
+  const def = getCarDef(carId);
+  const tint = new THREE.Color(color ?? def.defaultColor);
+  const key = `${def.id}-${tint.getHexString()}`;
+  if (coloredTemplateCache.has(key)) return coloredTemplateCache.get(key);
+
+  const template = await loadTemplate(def.id);
+  const painted = template.clone(true);
+  applyCarColor(painted, tint);
+  painted.userData.wheels = findWheels(painted);
+  painted.userData.carModelId = def.id;
+  coloredTemplateCache.set(key, painted);
+  return painted;
+}
+
+/** Preload all car models (call during boot). */
+export function preloadCars() {
+  return Promise.all(CAR_CATALOG.map((c) => loadTemplate(c.id)));
 }
 
 /**
- * Factory - builds a low-poly F1-style car from primitive meshes.
+ * Build a car mesh from a Kenney GLB model.
  * Returns a THREE.Group whose forward direction is +Z.
  */
-export function createCar(color) {
-  const g = getSharedGeometries();
-  const bodyMat = new THREE.MeshStandardMaterial({
-    color, roughness: 0.35, metalness: 0.35,
-  });
+export async function createCar(carModelId, color, { copyPaint = false, preserveTextures = false } = {}) {
+  const def = getCarDef(carModelId ?? DEFAULT_CAR_ID);
+  const tint = color ?? def.defaultColor;
 
-  const car = new THREE.Group();
-
-  const body = new THREE.Mesh(g.body, bodyMat);
-  body.position.y = 0.45;
-  body.castShadow = true;
-  car.add(body);
-
-  const nose = new THREE.Mesh(g.nose, bodyMat);
-  nose.position.set(0, 0.4, 2.6);
-  nose.castShadow = true;
-  car.add(nose);
-
-  const cockpit = new THREE.Mesh(g.cockpit, g.darkMat);
-  cockpit.rotation.x = Math.PI / 2;
-  cockpit.position.set(0, 0.78, -0.2);
-  cockpit.castShadow = true;
-  car.add(cockpit);
-
-  const halo = new THREE.Mesh(g.halo, g.darkMat);
-  halo.position.set(0, 0.85, 0.25);
-  car.add(halo);
-
-  const frontWing = new THREE.Mesh(g.frontWing, bodyMat);
-  frontWing.position.set(0, 0.28, 3.15);
-  frontWing.castShadow = true;
-  car.add(frontWing);
-
-  const rearWing = new THREE.Mesh(g.rearWing, bodyMat);
-  rearWing.position.set(0, 1.0, -2.15);
-  rearWing.castShadow = true;
-  car.add(rearWing);
-
-  for (const x of [-0.55, 0.55]) {
-    const pole = new THREE.Mesh(g.wingPole, g.darkMat);
-    pole.position.set(x, 0.72, -2.15);
-    car.add(pole);
+  if (preserveTextures) {
+    const template = await loadTemplate(def.id);
+    const car = template.clone(true);
+    applyCarColor(car, tint, { preserveTextures: true, strength: def.tintStrength ?? 0.3 });
+    car.userData.wheels = findWheels(car);
+    car.userData.carModelId = def.id;
+    car.userData.color = tint;
+    car.userData.baseColor = new THREE.Color(tint);
+    return car;
   }
 
-  car.userData.wheels = [];
-  const wheelSlots = [
-    [-1.0, 1.55], [1.0, 1.55],   // front
-    [-1.05, -1.7], [1.05, -1.7], // rear
-  ];
-  for (const [x, z] of wheelSlots) {
-    const wheel = new THREE.Mesh(g.wheel, g.tyreMat);
-    wheel.rotation.z = Math.PI / 2;
-    wheel.position.set(x, 0.44, z);
-    wheel.castShadow = true;
-    car.add(wheel);
-    car.userData.wheels.push(wheel);
-  }
-
-  car.userData.bodyMaterial = bodyMat;
+  const template = await getColoredTemplate(def.id, tint);
+  const car = template.clone();
+  if (copyPaint) applyCarColor(car, tint);
+  car.userData.wheels = findWheels(car);
+  car.userData.carModelId = def.id;
+  car.userData.color = tint;
+  car.userData.baseColor = new THREE.Color(tint);
   return car;
 }
 
-/** Dispose only per-car resources (shared geometries stay cached). */
-export function disposeCar(car) {
-  car.userData.bodyMaterial?.dispose();
+/** Dispose a car instance. Set keepAssets when the mesh shares cached materials. */
+export function disposeCar(car, { keepAssets = false } = {}) {
   car.parent?.remove(car);
+  if (keepAssets) return;
+  car.traverse((child) => {
+    if (child.isMesh && child.material) {
+      const mats = Array.isArray(child.material) ? child.material : [child.material];
+      for (const mat of mats) mat.dispose?.();
+    }
+  });
 }

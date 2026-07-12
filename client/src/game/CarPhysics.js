@@ -1,30 +1,75 @@
 /**
- * Arcade car physics - kinematic bicycle-ish model on the XZ plane.
- * Tuned for fun: strong grip, light drift with handbrake, off-track slowdown.
+ * Arcade car physics — stats-driven kinematic model on the XZ plane.
  */
 
-const TUNING = {
-  maxSpeed: 58,          // m/s (~209 km/h)
+const BASE = {
+  maxSpeed: 58,
   maxReverse: -12,
   engineAccel: 26,
   brakeAccel: 46,
-  drag: 0.55,            // quadratic-ish damping factor
+  drag: 0.55,
   rollingResistance: 2.2,
-  steerSpeed: 2.4,       // rad/s at low speed
-  steerLimitAtSpeed: 0.42, // steering authority falloff at top speed
-  grip: 7.0,             // lateral velocity kill rate
+  steerSpeed: 2.4,
+  steerLimitAtSpeed: 0.42,
+  grip: 7.0,
   handbrakeGrip: 1.6,
   offTrackFriction: 14,
   offTrackMaxSpeed: 18,
 };
 
+const BOOST_DURATION = 5;
+const BOOST_COOLDOWN = 10;
+const STAT_SCALE = 1 / 80;
+const DAMAGE_SPIN_THRESHOLD = 0.18;
+
+function clamp01(v) {
+  return Math.max(0, Math.min(1, v));
+}
+
+function headingDeltaAbs(a, b) {
+  const d = Math.atan2(Math.sin(a - b), Math.cos(a - b));
+  return Math.abs(d);
+}
+
 export class CarPhysics {
-  constructor() {
+  /**
+   * @param {{ speed:number, power:number, health:number, grip:number, weight:number, boost:number }} stats
+   */
+  constructor(stats) {
+    this.stats = stats;
     this.position = { x: 0, y: 0, z: 0 };
-    this.heading = 0;          // rotation around Y; forward = (sin, cos)
+    this.heading = 0;
     this.velocity = { x: 0, z: 0 };
-    this.speed = 0;            // signed forward speed (for HUD/audio)
-    this.steerVisual = 0;      // smoothed steer for wheel visuals
+    this.speed = 0;
+    this.steerVisual = 0;
+
+    this.maxHealth = stats.health;
+    this.health = stats.health;
+
+    this.boostActive = false;
+    this.boostTimeLeft = 0;
+    this.boostCooldown = 0;
+
+    this._tuning = this._buildTuning(stats);
+  }
+
+  _buildTuning(stats) {
+    return {
+      maxSpeed: BASE.maxSpeed * (0.75 + stats.speed * STAT_SCALE * 0.35),
+      maxReverse: BASE.maxReverse,
+      engineAccel: BASE.engineAccel * (0.7 + stats.power * STAT_SCALE * 0.45),
+      brakeAccel: BASE.brakeAccel,
+      drag: BASE.drag,
+      rollingResistance: BASE.rollingResistance,
+      steerSpeed: BASE.steerSpeed * (0.8 + stats.grip * STAT_SCALE * 0.35),
+      steerLimitAtSpeed: BASE.steerLimitAtSpeed,
+      grip: BASE.grip * (0.75 + stats.grip * STAT_SCALE * 0.4),
+      handbrakeGrip: BASE.handbrakeGrip,
+      offTrackFriction: BASE.offTrackFriction,
+      offTrackMaxSpeed: BASE.offTrackMaxSpeed,
+      boostMultiplier: 1.2 + stats.boost * STAT_SCALE * 0.55,
+      weight: stats.weight,
+    };
   }
 
   reset(position, heading) {
@@ -35,64 +80,179 @@ export class CarPhysics {
     this.velocity.x = 0;
     this.velocity.z = 0;
     this.speed = 0;
+    this.health = this.maxHealth;
+    this.boostActive = false;
+    this.boostTimeLeft = 0;
+    this.boostCooldown = 0;
+  }
+
+  tryActivateBoost() {
+    if (this.boostActive || this.boostCooldown > 0) return false;
+    this.boostActive = true;
+    this.boostTimeLeft = BOOST_DURATION;
+    return true;
+  }
+
+  get boostRatio() {
+    if (!this.boostActive) return 0;
+    return this.boostTimeLeft / BOOST_DURATION;
+  }
+
+  get boostCooldownRatio() {
+    if (this.boostCooldown <= 0) return 0;
+    return this.boostCooldown / BOOST_COOLDOWN;
+  }
+
+  get healthRatio() {
+    return this.health / this.maxHealth;
+  }
+
+  /** Scrape a barrier — bleed speed and nudge away from the pole. */
+  hitBarrier(barrierX, barrierZ) {
+    const spd = Math.abs(this.speed);
+    const normalX = this.position.x - barrierX;
+    const normalZ = this.position.z - barrierZ;
+    const normalLen = Math.hypot(normalX, normalZ) || 1;
+    const nx = normalX / normalLen;
+    const nz = normalZ / normalLen;
+
+    const vLen = Math.hypot(this.velocity.x, this.velocity.z) || 1;
+    const vx = this.velocity.x / vLen;
+    const vz = this.velocity.z / vLen;
+    // 1.0 -> direct head-first hit into pole normal, 0 -> glancing scrape.
+    const headOnFactor = clamp01(-(vx * nx + vz * nz));
+    const loss = Math.min(0.78, 0.18 + spd / 110 + headOnFactor * 0.42);
+
+    this.speed *= 1 - loss;
+    this.velocity.x *= 1 - loss;
+    this.velocity.z *= 1 - loss;
+
+    const push = 0.35 + loss * 0.25;
+    this.position.x += nx * push;
+    this.position.z += nz * push;
+
+    if (spd > 10) {
+      const barrierDamage = Math.round((0.6 + headOnFactor * 1.2) * (1 + spd * 0.045));
+      this.health = Math.max(0, this.health - barrierDamage);
+    }
+
+    return loss;
+  }
+
+  /**
+   * Car-to-car crash — damage scales with relative speed, angle and mass transfer.
+   * @returns {number} impact severity 0–1 for VFX
+   */
+  hitCar(otherSpeed, otherWeight, otherHeading = this.heading + Math.PI) {
+    const relSpeed = Math.abs(this.speed - otherSpeed);
+    const closing = Math.min(1, (Math.abs(this.speed) + Math.abs(otherSpeed)) / 95);
+    const impact = Math.min(1, relSpeed / 55 + closing * 0.45);
+    if (impact < 0.08) return 0;
+
+    const angle = headingDeltaAbs(this.heading, otherHeading);
+    const headOnFactor = clamp01((angle - 1.7) / (Math.PI - 1.7)); // starts increasing near ~97 deg+
+    const sideFactor = clamp01(1 - Math.abs(angle - Math.PI / 2) / (Math.PI / 2));
+    const angleImpact = 0.65 + headOnFactor * 0.75 + sideFactor * 0.18;
+
+    const myWeight = this._tuning.weight;
+    const weightRatio = otherWeight / Math.max(myWeight + otherWeight, 1);
+    const loss = impact * angleImpact * (0.24 + weightRatio * 0.46);
+
+    this.speed *= Math.max(0.15, 1 - loss);
+    this.velocity.x *= Math.max(0.15, 1 - loss);
+    this.velocity.z *= Math.max(0.15, 1 - loss);
+
+    // Touching another car (side/brush) is lighter; true head-on is much heavier.
+    const damage = Math.round(impact * angleImpact * (7 + 15 * weightRatio));
+    this.health = Math.max(0, this.health - damage);
+    return impact;
   }
 
   /**
    * @param {number} dt seconds
-   * @param {{throttle:number, steer:number, handbrake:boolean}} input
+   * @param {{throttle:number, steer:number, handbrake:boolean, boost:boolean}} input
    * @param {boolean} onTrack
    */
   step(dt, input, onTrack) {
+    if (input.boost) this.tryActivateBoost();
+
+    if (this.boostActive) {
+      this.boostTimeLeft -= dt;
+      if (this.boostTimeLeft <= 0) {
+        this.boostActive = false;
+        this.boostTimeLeft = 0;
+        this.boostCooldown = BOOST_COOLDOWN;
+      }
+    } else if (this.boostCooldown > 0) {
+      this.boostCooldown = Math.max(0, this.boostCooldown - dt);
+    }
+
+    const T = this._tuning;
+    const healthRatio = this.healthRatio;
+    const damageRatio = 1 - healthRatio;
+    const damageSpeedMul = 1 - Math.min(0.62, damageRatio * 0.68);
+    const damageAccelMul = 1 - Math.min(0.55, damageRatio * 0.58);
+    const damageGripPenalty = 1 - Math.min(0.42, damageRatio * 0.5);
+    const boostMul = this.boostActive ? T.boostMultiplier : 1;
     const fwdX = Math.sin(this.heading);
     const fwdZ = Math.cos(this.heading);
 
-    // Decompose velocity into forward/lateral components.
     let vFwd = this.velocity.x * fwdX + this.velocity.z * fwdZ;
     let vLat = this.velocity.x * fwdZ - this.velocity.z * fwdX;
 
-    // Engine / brake.
     if (input.throttle > 0) {
-      vFwd += TUNING.engineAccel * input.throttle * dt;
+      vFwd += T.engineAccel * damageAccelMul * boostMul * input.throttle * dt;
     } else if (input.throttle < 0) {
-      const decel = vFwd > 0.5 ? TUNING.brakeAccel : TUNING.engineAccel * 0.5;
+      const decel = vFwd > 0.5 ? T.brakeAccel : T.engineAccel * 0.5 * damageAccelMul;
       vFwd += decel * input.throttle * dt;
     }
 
-    // Resistance.
-    vFwd -= (TUNING.rollingResistance + Math.abs(vFwd) * TUNING.drag) * Math.sign(vFwd) * dt;
+    vFwd -= (T.rollingResistance + Math.abs(vFwd) * T.drag) * Math.sign(vFwd || 1) * dt;
     if (!onTrack) {
-      vFwd -= TUNING.offTrackFriction * Math.sign(vFwd) * dt;
-      const cap = TUNING.offTrackMaxSpeed;
-      vFwd = Math.max(-cap, Math.min(cap, vFwd));
+      vFwd -= T.offTrackFriction * Math.sign(vFwd || 1) * dt;
+      vFwd = Math.max(-T.offTrackMaxSpeed, Math.min(T.offTrackMaxSpeed, vFwd));
     }
-    vFwd = Math.max(TUNING.maxReverse, Math.min(TUNING.maxSpeed, vFwd));
+
+    const maxSpd = T.maxSpeed * boostMul * damageSpeedMul;
+    vFwd = Math.max(T.maxReverse, Math.min(maxSpd, vFwd));
     if (Math.abs(vFwd) < 0.05 && input.throttle === 0) vFwd = 0;
 
-    // Steering - authority shrinks with speed so top speed feels stable.
-    const speedRatio = Math.min(Math.abs(vFwd) / TUNING.maxSpeed, 1);
-    const authority = 1 - (1 - TUNING.steerLimitAtSpeed) * speedRatio;
-    const steerAmount = input.steer * TUNING.steerSpeed * authority;
-    // Only steer while moving; reverse flips steering like a real car.
+    const speedRatio = Math.min(Math.abs(vFwd) / maxSpd, 1);
+    const authority = 1 - (1 - T.steerLimitAtSpeed) * speedRatio;
+    const steerAmount = input.steer * T.steerSpeed * authority;
     const moveFactor = Math.min(Math.abs(vFwd) / 6, 1) * Math.sign(vFwd || 1);
     this.heading += steerAmount * moveFactor * dt;
 
-    // Lateral grip - bleed sideways velocity (less with handbrake = drift).
-    const grip = input.handbrake ? TUNING.handbrakeGrip : TUNING.grip;
+    const grip = (input.handbrake ? T.handbrakeGrip : T.grip) * damageGripPenalty;
     vLat *= Math.max(0, 1 - grip * dt);
     if (input.handbrake) {
-      vFwd -= TUNING.brakeAccel * 0.35 * Math.sign(vFwd) * dt;
+      vFwd -= T.brakeAccel * 0.35 * Math.sign(vFwd || 1) * dt;
     }
 
-    // Recompose and integrate.
     const nFwdX = Math.sin(this.heading);
     const nFwdZ = Math.cos(this.heading);
     this.velocity.x = nFwdX * vFwd + nFwdZ * vLat;
     this.velocity.z = nFwdZ * vFwd - nFwdX * vLat;
+
+    // Moderate/high damage destabilizes car orientation and path.
+    if (healthRatio < 0.5) {
+      const unstable = (0.5 - healthRatio) / 0.5;
+      const wobble = Math.sin(performance.now() * 0.008 + this.position.x * 0.03) * unstable;
+      this.heading += wobble * dt * 0.28;
+      this.velocity.x += -nFwdZ * unstable * 0.12 * dt;
+      this.velocity.z += nFwdX * unstable * 0.12 * dt;
+    }
+
+    // Critical damage: car starts to rotate/spin out aggressively.
+    if (healthRatio < DAMAGE_SPIN_THRESHOLD && Math.abs(vFwd) > 5) {
+      const spin = (DAMAGE_SPIN_THRESHOLD - healthRatio) / DAMAGE_SPIN_THRESHOLD;
+      this.heading += Math.sign(vFwd || 1) * spin * dt * 2.4;
+    }
+
     this.position.x += this.velocity.x * dt;
     this.position.z += this.velocity.z * dt;
     this.speed = vFwd;
 
-    // Smooth steering value for front wheel visuals.
     this.steerVisual += (input.steer * 0.45 - this.steerVisual) * Math.min(dt * 10, 1);
   }
 

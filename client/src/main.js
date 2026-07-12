@@ -5,16 +5,19 @@ import { RemotePlayers } from './game/RemotePlayers.js';
 import { StateSync } from './net/StateSync.js';
 import { socketClient } from './net/SocketClient.js';
 import { VoiceManager } from './voice/VoiceManager.js';
-import { loadTracks } from './tracks/trackDefinitions.js';
+import { loadTracks, getCachedTrack } from './tracks/trackDefinitions.js';
 import { authService } from './auth/authService.js';
-import { showScreen, clearScreen, toast } from './ui/dom.js';
+import { showScreen, clearScreen, toast, setRoomBadge, initRoomBadge } from './ui/dom.js';
 import { LoginScreen } from './ui/LoginScreen.js';
 import { MainMenuScreen } from './ui/MainMenuScreen.js';
 import { MapSelectScreen } from './ui/MapSelectScreen.js';
 import { LobbyScreen } from './ui/LobbyScreen.js';
 import { HUD } from './ui/HUD.js';
+import { createMinimap } from './ui/Minimap.js';
 import { ResultsScreen } from './ui/ResultsScreen.js';
 import { FriendsScreen } from './ui/FriendsScreen.js';
+import { getSelectedCarId } from './game/carPreferences.js';
+import { preloadCars } from './game/CarFactory.js';
 
 // ---------------------------------------------------------------------------
 // App-level singletons
@@ -29,6 +32,8 @@ let room = null;          // latest room:update payload
 let session = null;       // active RaceSession
 let lobby = null;         // { node, refresh }
 let hud = null;
+let minimap = null;
+let resultsView = null;
 let voice = null;
 let voiceState = 'off';
 let countdownTimer = null;
@@ -38,7 +43,7 @@ let menuAngle = 0;
 engine.onUpdate((dt) => {
   if (session) {
     session.update(dt);
-    remotePlayers.update();
+    remotePlayers.update(dt);
     voice?.update();
   } else {
     menuAngle += dt * 0.06;
@@ -56,10 +61,16 @@ async function connectSocket() {
   const token = await authService.getToken();
   await socketClient.connect({ name: authService.displayName, token });
 
-  socketClient.on('room:update', (data) => {
+  socketClient.on('room:update', async (data) => {
     const prevStatus = room?.status;
     room = data;
-    remotePlayers.syncPlayers(room.players, socketClient.id);
+    setRoomBadge(room.code);
+    const sync = remotePlayers.syncPlayers(room.players, socketClient.id);
+    if (room.status === 'lobby') {
+      await sync;
+    } else {
+      sync.catch((err) => console.error('Remote player sync failed', err));
+    }
     lobby?.refresh();
     updateStandings();
     // Rematch: race finished -> host reset to lobby.
@@ -94,12 +105,69 @@ async function connectSocket() {
 // ---------------------------------------------------------------------------
 // Race lifecycle
 // ---------------------------------------------------------------------------
-function onRaceCountdown({ startAt }) {
-  const trackDef = tracks.find((t) => t.id === room.trackId);
-  const me = room.players.find((p) => p.id === socketClient.id);
+function resolveTrackDef(trackId) {
+  return tracks.find((t) => t.id === trackId) ?? getCachedTrack(trackId);
+}
+
+function startCountdownTimer(startAt) {
+  clearInterval(countdownTimer);
+  countdownTimer = setInterval(() => {
+    const remaining = Math.ceil((startAt - Date.now()) / 1000);
+    if (remaining > 0) {
+      hud?.showCountdown(String(remaining));
+    } else {
+      clearInterval(countdownTimer);
+    }
+  }, 100);
+}
+
+async function onRaceCountdown({ startAt }) {
+  resultsView?.cancel?.();
+  resultsView = null;
+
+  const trackDef = resolveTrackDef(room?.trackId);
+  if (!trackDef) {
+    toast('Track data missing — refresh and try again');
+    return;
+  }
+  const me = room?.players?.find((p) => p.id === socketClient.id);
 
   disposeSession();
-  session = new RaceSession(engine, input, trackDef, me?.color ?? 0xe10600);
+  stateSync.clear();
+  showHud(trackDef);
+  hud?.showLoading(true);
+  startCountdownTimer(startAt);
+
+  try {
+    await startRaceSession(trackDef, me);
+    remotePlayers.syncPlayers(room?.players ?? [], socketClient.id)
+      .catch((err) => console.error('Remote player sync failed', err));
+  } catch (err) {
+    console.error('Race start failed', err);
+    toast('Failed to load race — try again');
+    clearInterval(countdownTimer);
+    disposeSession();
+    hud = null;
+    minimap = null;
+    showLobby();
+    return;
+  }
+
+  hud?.showLoading(false);
+}
+
+async function startRaceSession(trackDef, me) {
+  if (!trackDef?.controlPoints) {
+    throw new Error('Invalid track definition');
+  }
+  session = await RaceSession.create(
+    engine,
+    input,
+    trackDef,
+    me?.carModel,
+    stateSync,
+    () => room?.players ?? [],
+  );
   session.onCheckpointPass = async (index) => {
     const res = await socketClient.request('race:checkpoint', { index });
     if (!res) return;
@@ -111,19 +179,10 @@ function onRaceCountdown({ startAt }) {
       session.checkpoints.nextIndex = res.expected;
     }
   };
+  session.onHealthDepleted = () => toast('Car wrecked! Respawning...');
+  session.onCameraChange = (label) => toast(`Camera: ${label}`);
 
-  showHud();
   updateHudRace();
-
-  clearInterval(countdownTimer);
-  countdownTimer = setInterval(() => {
-    const remaining = Math.ceil((startAt - Date.now()) / 1000);
-    if (remaining > 0) {
-      hud?.showCountdown(String(remaining));
-    } else {
-      clearInterval(countdownTimer);
-    }
-  }, 100);
 }
 
 function updateHudRace() {
@@ -159,6 +218,10 @@ function cleanupRoom() {
   room = null;
   lobby = null;
   hud = null;
+  minimap = null;
+  resultsView?.cancel?.();
+  resultsView = null;
+  setRoomBadge(null);
 }
 
 async function toggleVoice() {
@@ -184,21 +247,20 @@ async function toggleVoice() {
 // Screens
 // ---------------------------------------------------------------------------
 function showLogin() {
-  showScreen(LoginScreen({ onDone: () => showMenu() }));
+  showScreen(LoginScreen({ onDone: showMenu }));
 }
 
 async function showMenu() {
-  try {
-    await connectSocket();
-  } catch {
-    toast('Cannot reach the server - is it running?');
-  }
   showScreen(MainMenuScreen({
     onCreateRoom: showMapSelect,
     onJoinRoom: async (code) => {
-      const res = await socketClient.request('room:join', { code });
+      const res = await socketClient.request('room:join', {
+        code,
+        carModel: getSelectedCarId(),
+      });
       if (!res.ok) return res.error;
       room = res.room;
+      setRoomBadge(room.code);
       showLobby();
       return null;
     },
@@ -208,6 +270,12 @@ async function showMenu() {
       showLogin();
     },
   }));
+
+  try {
+    await connectSocket();
+  } catch {
+    toast('Cannot reach the server - is it running?');
+  }
 }
 
 function showMapSelect() {
@@ -215,12 +283,16 @@ function showMapSelect() {
     tracks,
     onBack: showMenu,
     onSelect: async (trackId) => {
-      const res = await socketClient.request('room:create', { trackId });
+      const res = await socketClient.request('room:create', {
+        trackId,
+        carModel: getSelectedCarId(),
+      });
       if (!res.ok) {
         toast(res.error || 'Failed to create room');
         return;
       }
       room = res.room;
+      setRoomBadge(room.code);
       showLobby();
     },
   }));
@@ -228,29 +300,63 @@ function showMapSelect() {
 
 function showLobby() {
   disposeSession();
+  resultsView?.cancel?.();
+  resultsView = null;
   hud = null;
+  minimap = null;
+  setRoomBadge(room?.code ?? null);
   lobby = LobbyScreen({
     tracks,
     getRoom: () => room,
     localId: () => socketClient.id,
     onSetTrack: (trackId) => socketClient.emit('room:setTrack', { trackId }),
+    onSelectCar: async (carId) => {
+      const res = await socketClient.request('room:selectCar', { carModel: carId });
+      if (!res?.ok) toast(res?.error || 'Could not change car');
+    },
+    onAddBot: async () => {
+      const res = await socketClient.request('room:addBot', {});
+      if (!res?.ok) toast(res?.error || 'Could not add bot');
+    },
+    onRemoveBot: async (id) => {
+      const res = await socketClient.request('room:removeBot', { id });
+      if (!res?.ok) toast(res?.error || 'Could not remove bot');
+    },
     onStart: () => socketClient.emit('race:start'),
     onLeave: leaveRoom,
   });
   showScreen(lobby.node);
 }
 
-function showHud() {
+function showHud(trackDef) {
   lobby = null;
-  hud = HUD({ onToggleVoice: toggleVoice, onLeave: leaveRoom });
+  minimap = trackDef ? createMinimap(trackDef) : null;
+  hud = HUD({ onToggleVoice: toggleVoice, onLeave: leaveRoom, minimap: minimap ?? undefined });
   hud.setVoiceState(voiceState);
   showScreen(hud.node);
   updateStandings();
 
-  // Speed readout at ~10Hz.
   const speedTimer = setInterval(() => {
     if (!session || !hud) return clearInterval(speedTimer);
     hud.setSpeed(session.physics.speedKmh);
+    hud.setHealth(session.physics.healthRatio);
+    hud.setBoost(session.physics.boostRatio, session.physics.boostCooldownRatio);
+
+    if (minimap) {
+      const opponents = (room?.players ?? [])
+        .filter((p) => p.id !== socketClient.id)
+        .map((p) => {
+          const s = stateSync.sample(p.id);
+          if (!s) return null;
+          return { x: s.p[0], z: s.p[2], color: p.color };
+        })
+        .filter(Boolean);
+      minimap.update({
+        x: session.physics.position.x,
+        z: session.physics.position.z,
+        heading: session.physics.heading,
+      }, opponents);
+    }
   }, 100);
 }
 
@@ -258,12 +364,19 @@ function showResults(results) {
   clearInterval(countdownTimer);
   disposeSession();
   hud = null;
-  showScreen(ResultsScreen({
+  minimap = null;
+  resultsView?.cancel?.();
+  resultsView = ResultsScreen({
     results,
     isHost: room?.hostId === socketClient.id,
-    onBackToLobby: () => socketClient.emit('room:backToLobby'),
+    onRematchNow: () => socketClient.emit('race:start'),
+    onBackToLobby: () => {
+      resultsView?.cancel?.();
+      socketClient.emit('room:backToLobby');
+    },
     onLeave: leaveRoom,
-  }));
+  });
+  showScreen(resultsView.node);
 }
 
 function leaveRoom() {
@@ -277,8 +390,10 @@ function leaveRoom() {
 // ---------------------------------------------------------------------------
 (async function boot() {
   clearScreen();
+  initRoomBadge();
   try {
     tracks = await loadTracks();
+    preloadCars().catch(() => toast('Some car models failed to load'));
   } catch {
     toast('Could not load track data - start the server and refresh');
   }

@@ -10,6 +10,7 @@ import { getTrackList, getAllTracks } from './game/tracks.js';
 import { registerLobbyHandlers } from './sockets/lobbyHandlers.js';
 import { registerRaceHandlers } from './sockets/raceHandlers.js';
 import { registerVoiceHandlers } from './sockets/voiceHandlers.js';
+import { ROOM_STATUS } from './rooms/Room.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -39,11 +40,20 @@ io.on('connection', (socket) => {
   registerVoiceHandlers(io, socket);
 });
 
-// Room snapshot tick: broadcast player positions at 20Hz per active room.
+// Room tick: bot AI + position snapshots at 20Hz during races.
 const TICK_MS = 50;
+const TICK_S = TICK_MS / 1000;
 setInterval(() => {
   for (const room of roomManager.rooms.values()) {
-    if (room.players.size < 2) continue;
+    if (room.status === ROOM_STATUS.RACING) {
+      room.updateBots(TICK_S);
+      if (room._needsBroadcast) {
+        room._needsBroadcast = false;
+        io.to(room.code).emit('room:update', room.toJSON());
+      }
+    }
+    if (room.status !== ROOM_STATUS.RACING && room.status !== ROOM_STATUS.COUNTDOWN) continue;
+    if (room.players.size < 1) continue;
     io.to(room.code).volatile.emit('state:snapshot', room.snapshot());
   }
 }, TICK_MS);
