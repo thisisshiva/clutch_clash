@@ -1,0 +1,479 @@
+import * as THREE from 'three';
+import { createCar, disposeCar, applyDamageWear, spinWheels } from './CarFactory.js';
+import { CarPhysics } from './CarPhysics.js';
+import { TrackBuilder } from './TrackBuilder.js';
+import { applyTrackEnvironment } from './TrackEnvironment.js';
+import { CheckpointSystem } from './CheckpointSystem.js';
+import { EngineSound } from '../voice/SpatialAudio.js';
+import { CrashEffect } from './CrashEffect.js';
+import { DamageVfx, WRECK_DURATION } from './DamageVfx.js';
+import { BoostVfx } from './BoostVfx.js';
+import { TrafficManager } from './TrafficManager.js';
+import { getCarStats, getCarDef } from './carCatalog.js';
+import { socketClient } from '../net/SocketClient.js';
+
+const NET_SEND_HZ = 20;
+const CAR_RADIUS = 1.05;
+const CRASH_COOLDOWN_MS = 450;
+const DAMAGE_SHAKE_DURATION = 2.0;
+
+/** Press C to cycle through these camera modes. */
+const CAMERA_MODES = [
+  { id: 'chase', label: 'Chase', kind: 'chase', distance: 13, height: 6, lookAt: 1.4, fov: 70, lerp: 5, speedPull: 1.5, speedFov: 14 },
+  { id: 'close', label: 'Close', kind: 'chase', distance: 7, height: 3.2, lookAt: 0.95, fov: 58, lerp: 7, speedPull: 0.9, speedFov: 8 },
+  { id: 'hood', label: 'Hood', kind: 'hood', distance: 1.35, height: 1.45, lookAt: 24, lookAtHeight: 1.1, fov: 68, lerp: 10, speedPull: 0.15, speedFov: 6 },
+  { id: 'cockpit', label: 'Cockpit', kind: 'hood', distance: 0.2, height: 1.08, lookAt: 30, lookAtHeight: 1.05, fov: 74, lerp: 12, speedPull: 0, speedFov: 4 },
+  { id: 'top', label: 'Top Down', kind: 'top', height: 24, lookAt: 0.6, fov: 54, lerp: 6, speedFov: 3 },
+  { id: 'cinematic', label: 'Cinematic', kind: 'chase', distance: 19, height: 9, lookAt: 1.2, fov: 62, lerp: 4, speedPull: 2.2, speedFov: 16 },
+  { id: 'side', label: 'Side', kind: 'side', distance: 8, height: 3.6, lateral: 6.5, lookAt: 1.0, fov: 60, lerp: 6, speedPull: 1.0, speedFov: 10 },
+];
+
+/**
+ * One race on one track: local car + physics + checkpoints + chase camera +
+ * network state publishing + engine audio. Remote cars are handled by
+ * RemotePlayers (shared with the lobby), this class only drives the update loop.
+ */
+export class RaceSession {
+  static async create(engine, input, trackDef, carModelId, stateSync, getPlayers) {
+    const session = new RaceSession(engine, input, trackDef, carModelId, stateSync, getPlayers);
+    const def = getCarDef(carModelId);
+    session.car = await createCar(carModelId, def.defaultColor, { preserveTextures: true });
+    engine.scene.add(session.car);
+    session.boostVfx = new BoostVfx(session.car, def.defaultColor);
+    await session._initTraffic();
+    session.damageVfx = new DamageVfx(session.car);
+    session.physics.reset(session._spawn.position, session._spawn.heading);
+    session._applyTransform();
+    session._snapCamera();
+    return session;
+  }
+
+  constructor(engine, input, trackDef, carModelId, stateSync, getPlayers) {
+    this.engine = engine;
+    this.input = input;
+    this.trackDef = trackDef;
+    this.stateSync = stateSync;
+    this.getPlayers = getPlayers;
+    this.carStats = getCarStats(carModelId);
+    this.carDef = getCarDef(carModelId);
+
+    this._clearEnvironment = applyTrackEnvironment(engine, trackDef.atmosphere, trackDef.length);
+    this.track = new TrackBuilder(trackDef);
+    engine.scene.add(this.track.group);
+
+    this.car = null;
+    this.damageVfx = null;
+    this.boostVfx = null;
+    this.physics = new CarPhysics(this.carStats);
+    this.checkpoints = new CheckpointSystem(trackDef);
+
+    this.controlsEnabled = false;
+    this.finished = false;
+    this.totalLaps = trackDef.laps;
+    this.lap = 1;
+    this.cpDone = 0;
+
+    this.engineSound = null;
+    this._netAccumulator = 0;
+    this._camPos = new THREE.Vector3();
+    this._spawn = { position: trackDef.spawnPoints[0].position, heading: trackDef.spawnPoints[0].heading };
+    this._crashCooldowns = new Map();
+    this._barrierCooldown = 0;
+    this._crashEffects = [];
+    this._wrecking = false;
+    this._wreckTimer = 0;
+    this._camShake = 0;
+    this._cameraMode = 0;
+    this._defaultFov = engine.camera.fov;
+    this._targetFov = CAMERA_MODES[0].fov;
+    this._traffic = null;
+    this._damageShakeTime = 0;
+    this._damageShakeStrength = 0;
+
+    this.onCheckpointPass = null;
+    this.onBarrierHit = null;
+    this.onCarCrash = null;
+    this.onHealthDepleted = null;
+    this.onCameraChange = null;
+
+    this.checkpoints.onPass = (index) => this.onCheckpointPass?.(index);
+  }
+
+  setSpawn(position, heading) {
+    this._spawn = { position, heading };
+    this.physics.reset(position, heading);
+    this._applyTransform();
+    this._snapCamera();
+  }
+
+  enableControls() {
+    this.controlsEnabled = true;
+    if (!this.engineSound) {
+      this.engine.listener.context.resume();
+      this.engineSound = new EngineSound(this.engine.listener, this.carDef.engine);
+    }
+  }
+
+  respawn() {
+    const point = this.checkpoints.getRespawnPoint(this._spawn);
+    this.physics.reset(point.position, point.heading);
+    this._applyTransform();
+    this._snapCamera();
+  }
+
+  update(dt) {
+    this.track.update(dt);
+    const controls = this.controlsEnabled && !this.finished
+      ? {
+          throttle: this.input.throttle,
+          steer: this.input.steer,
+          handbrake: this.input.handbrake,
+          boost: this.input.consumeBoost(),
+        }
+      : { throttle: 0, steer: 0, handbrake: false, boost: false };
+
+    if (this.controlsEnabled && this.input.consume('KeyR')) this.respawn();
+    if (this.controlsEnabled && this.input.consume('KeyC')) this._toggleCamera();
+
+    if (this._wrecking) {
+      this._updateWreck(dt);
+      return;
+    }
+
+    const onTrack = this.track.isOnTrack(this.physics.position.x, this.physics.position.z);
+    this.physics.step(dt, controls, onTrack);
+
+    if (this._barrierCooldown > 0) this._barrierCooldown -= dt;
+
+    if (this.controlsEnabled && !this.finished) {
+      this._checkBarrierCollision();
+      this._checkCarCollisions();
+      this._checkTrafficCollisions();
+    }
+
+    if (this.physics.health <= 0 && this.controlsEnabled && !this.finished) {
+      this._startWreck();
+      return;
+    }
+
+    this._applyTransform();
+    this._updateDamageVisuals(dt);
+    this._updateBoostVfx(dt, controls.throttle);
+    this._updateCrashEffects(dt);
+    this._traffic?.setPlayerPosition(this.physics.position.x, this.physics.position.z);
+    this._traffic?.update(dt);
+
+    if (this.controlsEnabled && !this.finished) {
+      this.checkpoints.update(this.physics.position.x, this.physics.position.z);
+    }
+
+    if (this._damageShakeTime > 0) {
+      this._damageShakeTime = Math.max(0, this._damageShakeTime - dt);
+    }
+
+    this._updateCamera(dt);
+    const maxSpd = 58 * (0.75 + this.carStats.speed / 80 * 0.35);
+    this.engineSound?.update(Math.abs(this.physics.speed) / maxSpd);
+
+    this._netAccumulator += dt;
+    if (this._netAccumulator >= 1 / NET_SEND_HZ) {
+      this._netAccumulator = 0;
+      socketClient.emit('player:state', {
+        p: [this.physics.position.x, this.physics.position.y, this.physics.position.z],
+        r: this.physics.heading,
+        s: this.physics.speed,
+        h: this.physics.health,
+      });
+    }
+  }
+
+  _checkBarrierCollision() {
+    if (this._barrierCooldown > 0) return;
+
+    const hit = this.track.checkBarrierHit(this.physics.position.x, this.physics.position.z, CAR_RADIUS);
+    if (!hit) return;
+
+    const intensity = this.physics.hitBarrier(hit.x, hit.z);
+    this._barrierCooldown = 0.25;
+    if (intensity > 0.2) {
+      this._spawnCrashEffect(hit.x, hit.z, 0.25 + intensity * 0.45);
+    }
+    this._triggerDamageShake(0.3 + intensity * 0.45);
+    this.onBarrierHit?.(intensity);
+  }
+
+  _checkCarCollisions() {
+    const now = performance.now();
+    const px = this.physics.position.x;
+    const pz = this.physics.position.z;
+
+    for (const player of this.getPlayers()) {
+      if (player.id === socketClient.id) continue;
+      const state = this.stateSync.sample(player.id);
+      if (!state) continue;
+
+      const lastHit = this._crashCooldowns.get(player.id) ?? 0;
+      if (now - lastHit < CRASH_COOLDOWN_MS) continue;
+
+      const ox = state.p[0];
+      const oz = state.p[2];
+      const dx = px - ox;
+      const dz = pz - oz;
+      const dist = Math.hypot(dx, dz);
+      if (dist >= CAR_RADIUS * 2) continue;
+
+      const otherStats = getCarStats(player.carModel);
+      const intensity = this.physics.hitCar(state.s, otherStats.weight, state.r);
+      if (intensity === 0) continue;
+
+      this._crashCooldowns.set(player.id, now);
+      const mx = (px + ox) / 2;
+      const mz = (pz + oz) / 2;
+      this._spawnCrashEffect(mx, mz, 0.5 + intensity * 0.5);
+      this._triggerDamageShake(0.45 + intensity * 0.55);
+      this.onCarCrash?.();
+    }
+  }
+
+  _checkTrafficCollisions() {
+    if (!this._traffic) return;
+    const intensity = this._traffic.checkPlayerCollision(
+      this.physics,
+      this.physics.position.x,
+      this.physics.position.z,
+    );
+    if (!intensity) return;
+    this._spawnCrashEffect(this.physics.position.x, this.physics.position.z, 0.45 + intensity * 0.5);
+    this._camShake = Math.max(this._camShake, intensity * 0.35);
+    this._triggerDamageShake(0.4 + intensity * 0.5);
+    this.onCarCrash?.();
+  }
+
+  _triggerDamageShake(strength) {
+    this._damageShakeTime = DAMAGE_SHAKE_DURATION;
+    this._damageShakeStrength = Math.max(this._damageShakeStrength, Math.min(1, strength));
+  }
+
+  _updateBoostVfx(dt, throttle) {
+    if (!this.boostVfx) return;
+    const maxSpd = 58 * (0.75 + this.carStats.speed / 80 * 0.35);
+    this.boostVfx.update(dt, {
+      active: this.physics.boostActive,
+      boostRatio: this.physics.boostRatio,
+      speedRatio: Math.min(Math.abs(this.physics.speed) / Math.max(maxSpd, 1), 1),
+      throttle,
+    });
+  }
+
+  _updateDamageVisuals(dt) {
+    const ratio = this.physics.healthRatio;
+    this.damageVfx?.update(dt, ratio, this.physics.speed);
+    if (this.car) applyDamageWear(this.car, ratio);
+  }
+
+  _startWreck() {
+    this._wrecking = true;
+    this._wreckTimer = WRECK_DURATION;
+    this._camShake = 0.65;
+    this.physics.speed = 0;
+    this.physics.velocity.x = 0;
+    this.physics.velocity.z = 0;
+    this.damageVfx?.triggerWreckFlash(this._wreckTimer);
+    this._spawnCrashEffect(this.physics.position.x, this.physics.position.z, 1.5);
+    this.onHealthDepleted?.();
+  }
+
+  _updateWreck(dt) {
+    this._wreckTimer -= dt;
+    this._applyTransform();
+    this.damageVfx?.update(dt, 0, 0);
+    this._updateCrashEffects(dt);
+    this._updateCamera(dt);
+
+    if (this._wreckTimer <= 0) {
+      this._wrecking = false;
+      this.damageVfx?.clearWreckFlash();
+      this.respawn();
+    }
+  }
+
+  _spawnCrashEffect(x, z, intensity) {
+    const fx = new CrashEffect(this.engine.scene, x, z, intensity);
+    this._crashEffects.push(fx);
+  }
+
+  _updateCrashEffects(dt) {
+    this._crashEffects = this._crashEffects.filter((fx) => {
+      fx.update(dt);
+      return fx.alive;
+    });
+  }
+
+  _applyTransform() {
+    if (!this.car) return;
+    const shakeRatio = this._damageShakeTime > 0
+      ? this._damageShakeTime / DAMAGE_SHAKE_DURATION
+      : 0;
+    const shakeStrength = this._damageShakeStrength * shakeRatio;
+    this.car.position.set(this.physics.position.x, this.physics.position.y, this.physics.position.z);
+    this.car.rotation.y = this.physics.heading;
+
+    if (shakeStrength > 0.01) {
+      const t = performance.now() * 0.004;
+      const yawTwist = Math.sin(t + this.physics.position.x * 0.01) * shakeStrength * 0.22;
+      const rollTwist = Math.sin(t * 1.5 + this.physics.position.z * 0.01) * shakeStrength * 0.28;
+      const pitchTwist = Math.cos(t * 1.2) * shakeStrength * 0.12;
+      this.car.rotation.y += yawTwist;
+      this.car.rotation.z = rollTwist;
+      this.car.rotation.x = pitchTwist;
+      this.car.position.y += Math.sin(t * 4) * shakeStrength * 0.12;
+    } else {
+      this.car.rotation.z = 0;
+      this.car.rotation.x = 0;
+      this._damageShakeStrength = 0;
+    }
+
+    const wheels = this.car.userData.wheels ?? [];
+    spinWheels(wheels, this.physics.speed, this.physics.steerVisual);
+  }
+
+  _toggleCamera() {
+    this._cameraMode = (this._cameraMode + 1) % CAMERA_MODES.length;
+    const preset = this._cameraPreset();
+    this._targetFov = preset.fov;
+    this.onCameraChange?.(preset.label);
+  }
+
+  _cameraPreset() {
+    return CAMERA_MODES[this._cameraMode];
+  }
+
+  _cameraLookAt(preset) {
+    const h = this.physics.heading;
+    const px = this.car.position.x;
+    const py = this.car.position.y;
+    const pz = this.car.position.z;
+
+    if (preset.kind === 'hood') {
+      return new THREE.Vector3(
+        px + Math.sin(h) * preset.lookAt,
+        py + (preset.lookAtHeight ?? 1.0),
+        pz + Math.cos(h) * preset.lookAt,
+      );
+    }
+
+    return new THREE.Vector3(px, py + preset.lookAt, pz);
+  }
+
+  _updateCamera(dt) {
+    const cam = this.engine.camera;
+    const preset = this._cameraPreset();
+    const maxSpd = 58 * (0.75 + this.carStats.speed / 80 * 0.35);
+    const speedRatio = Math.min(Math.abs(this.physics.speed) / Math.max(maxSpd, 1), 1);
+    const target = this._cameraTarget(preset, speedRatio);
+    const lerpSpeed = preset.lerp ?? 5;
+    this._camPos.lerp(target, Math.min(dt * lerpSpeed, 1));
+
+    if (this._camShake > 0) {
+      this._camShake = Math.max(0, this._camShake - dt * 1.8);
+      const s = this._camShake;
+      this._camPos.x += (Math.random() - 0.5) * s * 2.2;
+      this._camPos.y += (Math.random() - 0.5) * s * 1.4;
+      this._camPos.z += (Math.random() - 0.5) * s * 2.2;
+    }
+
+    cam.position.copy(this._camPos);
+    const lookAt = this._cameraLookAt(preset);
+    cam.lookAt(lookAt.x, lookAt.y, lookAt.z);
+
+    const speedFovBoost = preset.speedFov ?? 10;
+    const boostFov = this.physics.boostActive ? Math.min(8, speedFovBoost * 0.55) : 0;
+    this._targetFov = preset.fov + speedRatio * speedFovBoost + boostFov;
+    if (Math.abs(cam.fov - this._targetFov) > 0.05) {
+      cam.fov += (this._targetFov - cam.fov) * Math.min(dt * 6, 1);
+      cam.updateProjectionMatrix();
+    }
+  }
+
+  _cameraTarget(preset = this._cameraPreset(), speedRatio = 0) {
+    const h = this.physics.heading;
+    const px = this.physics.position.x;
+    const py = this.physics.position.y;
+    const pz = this.physics.position.z;
+    const sin = Math.sin(h);
+    const cos = Math.cos(h);
+    const rightX = cos;
+    const rightZ = -sin;
+
+    if (preset.kind === 'top') {
+      return new THREE.Vector3(px, py + preset.height, pz);
+    }
+
+    if (preset.kind === 'side') {
+      const dist = Math.max(4, (preset.distance ?? 8) - speedRatio * (preset.speedPull ?? 1));
+      const lateral = preset.lateral ?? 6;
+      return new THREE.Vector3(
+        px - sin * dist * 0.35 + rightX * lateral,
+        py + preset.height,
+        pz - cos * dist * 0.35 + rightZ * lateral,
+      );
+    }
+
+    if (preset.kind === 'hood') {
+      const back = preset.distance ?? 1.2;
+      return new THREE.Vector3(
+        px - sin * back,
+        py + preset.height,
+        pz - cos * back,
+      );
+    }
+
+    const dist = Math.max(3.8, preset.distance - speedRatio * (preset.speedPull ?? 1.5));
+    const height = Math.max(1.8, preset.height - speedRatio * (preset.speedPull ?? 1.5) * 0.35);
+    return new THREE.Vector3(px - sin * dist, py + height, pz - cos * dist);
+  }
+
+  _snapCamera() {
+    this._camPos.copy(this._cameraTarget());
+    const cam = this.engine.camera;
+    cam.position.copy(this._camPos);
+    cam.fov = this._targetFov;
+    cam.updateProjectionMatrix();
+  }
+
+  async _initTraffic() {
+    if (!TrafficManager.supportsTrack(this.trackDef)) return;
+    this._traffic = new TrafficManager(this.engine.scene, this.track, this.trackDef);
+    await this._traffic.spawn();
+  }
+
+  applyServerProgress({ lap, finished }) {
+    if (finished) {
+      this.finished = true;
+      this.lap = this.totalLaps;
+      return;
+    }
+    if (lap != null) {
+      if (lap > this.lap) this.cpDone = 0;
+      this.lap = lap;
+    }
+    this.cpDone = Math.min(this.cpDone + 1, this.trackDef.checkpointCount);
+  }
+
+  dispose() {
+    this.engineSound?.dispose();
+    this.damageVfx?.dispose();
+    this.boostVfx?.dispose();
+    for (const fx of this._crashEffects) fx.dispose();
+    this._crashEffects = [];
+    if (this.car) disposeCar(this.car);
+    this._traffic?.dispose();
+    this._traffic = null;
+    this.track.dispose();
+    this.engine.disposeObject(this.track.group);
+    this._clearEnvironment?.();
+    this._clearEnvironment = null;
+    this.engine.camera.fov = this._defaultFov;
+    this.engine.camera.updateProjectionMatrix();
+  }
+}
