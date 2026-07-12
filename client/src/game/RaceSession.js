@@ -107,6 +107,12 @@ export class RaceSession {
     this._cameraCycleInterval = 14;
     this._orbitAngle = 0;
     this._theaterDriving = false;
+    /** @type {'hold'|'reveal'|'flow'} hold=Low through intro; reveal=map orbit; flow=cycle */
+    this._theaterCamPhase = 'hold';
+    this._theaterRevealTimer = 0;
+    this._theaterRevealDuration = 11;
+    this._mapOrbitAngle = 0;
+    this._revealOrbit = { distance: 32, height: 14, lookAt: 1.2, speed: 0.28, fov: 52 };
 
     this.onCheckpointPass = null;
     this.onBarrierHit = null;
@@ -133,15 +139,52 @@ export class RaceSession {
     }
   }
 
-  /** Begin autopilot + cinematic camera cycling after the theater intro. */
+  /** Begin autopilot during the intro while holding the Low camera. */
   startTheaterDrive() {
     if (!this.theaterMode) return;
     this._theaterDriving = true;
-    this._autopilot?.start();
+    this._theaterCamPhase = 'hold';
+    this._cameraMode = 0;
+    this._targetFov = this._cameraModes[0].fov;
     this._cameraCycleTimer = 0;
+    this._autopilot?.start();
     if (!this._tireTrail) {
       this._tireTrail = new TireTrail(this.engine.scene);
     }
+  }
+
+  /**
+   * After 3-2-1: car-focused rotating reveal, then the normal theater camera flow
+   * (Side → Aerial → Orbit → Hero → Low…).
+   */
+  beginTheaterCameraFlow() {
+    if (!this.theaterMode) return;
+    const px = this.physics.position.x;
+    const pz = this.physics.position.z;
+    const dx = this._camPos.x - px;
+    const dz = this._camPos.z - pz;
+    const speed = this._revealOrbit.speed;
+    this._mapOrbitAngle = Math.atan2(dx, dz) / Math.max(speed, 0.01);
+    this._theaterRevealTimer = 0;
+    this._theaterCamPhase = 'reveal';
+    this._targetFov = this._revealOrbit.fov;
+    this.onCameraChange?.('Map');
+  }
+
+  _beginTheaterFlowCycle() {
+    this._theaterCamPhase = 'flow';
+    // Skip Low — already used for the intro; start the aesthetic cycle at Side.
+    this._cameraMode = 1 % this._cameraModes.length;
+    this._cameraCycleTimer = 0;
+    const preset = this._cameraPreset();
+    this._targetFov = preset.fov;
+    if (preset.kind === 'orbit') {
+      const dx = this._camPos.x - this.physics.position.x;
+      const dz = this._camPos.z - this.physics.position.z;
+      const speed = preset.orbitSpeed ?? 0.2;
+      this._orbitAngle = Math.atan2(dx, dz) / Math.max(speed, 0.01);
+    }
+    this.onCameraChange?.(preset.label);
   }
 
   respawn() {
@@ -231,10 +274,17 @@ export class RaceSession {
 
     if (this._theaterDriving) {
       this._autopilot?.update(dt, this.physics);
-      this._cameraCycleTimer += dt;
-      if (this._cameraCycleTimer >= this._cameraCycleInterval) {
-        this._cameraCycleTimer = 0;
-        this._toggleCamera();
+      if (this._theaterCamPhase === 'reveal') {
+        this._theaterRevealTimer += dt;
+        if (this._theaterRevealTimer >= this._theaterRevealDuration) {
+          this._beginTheaterFlowCycle();
+        }
+      } else if (this._theaterCamPhase === 'flow') {
+        this._cameraCycleTimer += dt;
+        if (this._cameraCycleTimer >= this._cameraCycleInterval) {
+          this._cameraCycleTimer = 0;
+          this._toggleCamera();
+        }
       }
     }
 
@@ -441,6 +491,12 @@ export class RaceSession {
     const preset = this._cameraPreset();
     const maxSpd = 58 * (0.75 + this.carStats.speed / 80 * 0.35);
     const speedRatio = Math.min(Math.abs(this.physics.speed) / Math.max(maxSpd, 1), 1);
+
+    if (this.theaterMode && this._theaterCamPhase === 'reveal') {
+      this._updateMapRevealCamera(dt);
+      return;
+    }
+
     const target = this._cameraTarget(preset, speedRatio);
     const lookTarget = this._cameraLookAtTarget(preset);
     const lerpSpeed = preset.lerp ?? 5;
@@ -496,6 +552,49 @@ export class RaceSession {
         ? (1 - Math.exp(-1.1 * dt))
         : Math.min(dt * 6, 1);
       cam.fov += (this._targetFov - cam.fov) * fovBlend;
+      cam.updateProjectionMatrix();
+    }
+  }
+
+  /** Elevated orbit around the car — landscape reads, car stays clearly framed. */
+  _updateMapRevealCamera(dt) {
+    const cam = this.engine.camera;
+    const r = this._revealOrbit;
+    const px = this.physics.position.x;
+    const py = this.physics.position.y;
+    const pz = this.physics.position.z;
+    this._mapOrbitAngle += dt;
+
+    const angle = this._mapOrbitAngle * r.speed;
+    const target = new THREE.Vector3(
+      px + Math.sin(angle) * r.distance,
+      py + r.height,
+      pz + Math.cos(angle) * r.distance,
+    );
+    const lookTarget = new THREE.Vector3(px, py + r.lookAt, pz);
+
+    // Keep framing locked to the moving car while easing into the orbit.
+    const dx = px - this._camFollowCar.x;
+    const dy = py - this._camFollowCar.y;
+    const dz = pz - this._camFollowCar.z;
+    this._camPos.x += dx;
+    this._camPos.y += dy;
+    this._camPos.z += dz;
+    this._lookAtPos.x += dx;
+    this._lookAtPos.y += dy;
+    this._lookAtPos.z += dz;
+    this._camFollowCar.set(px, py, pz);
+
+    const blend = 1 - Math.exp(-0.7 * dt);
+    this._camPos.lerp(target, blend);
+    this._lookAtPos.lerp(lookTarget, blend);
+
+    cam.position.copy(this._camPos);
+    cam.lookAt(this._lookAtPos.x, this._lookAtPos.y, this._lookAtPos.z);
+
+    this._targetFov = r.fov;
+    if (Math.abs(cam.fov - this._targetFov) > 0.05) {
+      cam.fov += (this._targetFov - cam.fov) * (1 - Math.exp(-1.0 * dt));
       cam.updateProjectionMatrix();
     }
   }

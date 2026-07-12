@@ -15,7 +15,16 @@ export class TheaterMusic {
     this._fadeTimer = null;
   }
 
-  async start() {
+  get element() {
+    return this._audio;
+  }
+
+  /**
+   * @param {string} [src]
+   * @returns {Promise<void>}
+   */
+  async start(src) {
+    if (src) this.src = src;
     this.stop(true);
     const audio = new Audio(this.src);
     audio.loop = true;

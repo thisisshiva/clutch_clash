@@ -16,8 +16,9 @@ import { HUD } from './ui/HUD.js';
 import { createMinimap } from './ui/Minimap.js';
 import { ResultsScreen } from './ui/ResultsScreen.js';
 import { FriendsScreen } from './ui/FriendsScreen.js';
-import { playTheaterIntro } from './ui/TheaterIntro.js';
+import { playTheaterIntro, getTheaterIntroCanvas } from './ui/TheaterIntro.js';
 import { TheaterMusic } from './voice/TheaterMusic.js';
+import { TheaterRecorder } from './game/TheaterRecorder.js';
 import { getSelectedCarId } from './game/carPreferences.js';
 import { preloadCars } from './game/CarFactory.js';
 
@@ -29,6 +30,14 @@ const input = new Input();
 const stateSync = new StateSync();
 const remotePlayers = new RemotePlayers(engine.scene, stateSync);
 const theaterMusic = new TheaterMusic('/audio/bring-it-together.mp3', { volume: 0.18 });
+const theaterRecorder = new TheaterRecorder(
+  document.getElementById('game-canvas'),
+  () => theaterMusic.element,
+  {
+    getOverlayCanvas: getTheaterIntroCanvas,
+    onComplete: (filename) => toast(`Downloaded ${filename}`),
+  },
+);
 
 let tracks = [];
 let room = null;          // latest room:update payload
@@ -217,6 +226,8 @@ function exitTheater() {
   theaterActive = false;
   clearInterval(theaterHudTimer);
   theaterHudTimer = null;
+  // Keep whatever was recorded and download it if still capturing.
+  if (theaterRecorder.recording) theaterRecorder.stop();
   theaterMusic.stop();
   disposeSession();
   hud = null;
@@ -268,20 +279,37 @@ async function startTheaterMode(trackId) {
 
   hud?.showLoading(false);
   session.startTheaterDrive();
-  theaterMusic.start();
+  const musicSrc = base.id === 'road-to-heaven'
+    ? '/audio/windy-road-back-to-you.mp3'
+    : '/audio/bring-it-together.mp3';
+  const songName = base.id === 'road-to-heaven'
+    ? 'Windy Road Back To You'
+    : 'Bring It Together';
+  await theaterMusic.start(musicSrc);
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+  const slug = String(base.id || 'theater').replace(/[^a-z0-9-]+/gi, '-');
+  const started = await theaterRecorder.start({
+    durationMs: 60_000,
+    filename: `${slug}-theater-${stamp}.webm`,
+  });
+  if (started) toast('Recording theater — download starts in 60s');
+  else toast('Theater recording unavailable in this browser');
+
   const introWords = String(base.name || 'Theater')
     .replace(/[·•|/]/g, ' ')
     .split(/\s+/)
     .filter(Boolean)
     .map((word) => word.toUpperCase());
-  await playTheaterIntro(introWords.length ? introWords : ['THEATER']);
+  await playTheaterIntro(introWords.length ? introWords : ['THEATER'], { songName });
   if (!theaterActive || !session) return;
+  session.beginTheaterCameraFlow();
 }
 
 function cleanupRoom() {
   clearInterval(countdownTimer);
   clearInterval(theaterHudTimer);
   theaterActive = false;
+  theaterRecorder.stop(true);
   theaterMusic.stop(true);
   disposeSession();
   voice?.stop();
