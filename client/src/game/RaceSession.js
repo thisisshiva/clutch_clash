@@ -21,8 +21,6 @@ const DAMAGE_SHAKE_DURATION = 2.0;
 const CAMERA_MODES = [
   { id: 'chase', label: 'Chase', kind: 'chase', distance: 13, height: 6, lookAt: 1.4, fov: 70, lerp: 5, speedPull: 1.5, speedFov: 14 },
   { id: 'close', label: 'Close', kind: 'chase', distance: 7, height: 3.2, lookAt: 0.95, fov: 58, lerp: 7, speedPull: 0.9, speedFov: 8 },
-  { id: 'hood', label: 'Hood', kind: 'hood', distance: 1.35, height: 1.45, lookAt: 24, lookAtHeight: 1.1, fov: 68, lerp: 10, speedPull: 0.15, speedFov: 6 },
-  { id: 'cockpit', label: 'Cockpit', kind: 'hood', distance: 0.2, height: 1.08, lookAt: 30, lookAtHeight: 1.05, fov: 74, lerp: 12, speedPull: 0, speedFov: 4 },
   { id: 'top', label: 'Top Down', kind: 'top', height: 24, lookAt: 0.6, fov: 54, lerp: 6, speedFov: 3 },
   { id: 'cinematic', label: 'Cinematic', kind: 'chase', distance: 19, height: 9, lookAt: 1.2, fov: 62, lerp: 4, speedPull: 2.2, speedFov: 16 },
   { id: 'side', label: 'Side', kind: 'side', distance: 8, height: 3.6, lateral: 6.5, lookAt: 1.0, fov: 60, lerp: 6, speedPull: 1.0, speedFov: 10 },
@@ -349,19 +347,9 @@ export class RaceSession {
   }
 
   _cameraLookAt(preset) {
-    const h = this.physics.heading;
     const px = this.car.position.x;
     const py = this.car.position.y;
     const pz = this.car.position.z;
-
-    if (preset.kind === 'hood') {
-      return new THREE.Vector3(
-        px + Math.sin(h) * preset.lookAt,
-        py + (preset.lookAtHeight ?? 1.0),
-        pz + Math.cos(h) * preset.lookAt,
-      );
-    }
-
     return new THREE.Vector3(px, py + preset.lookAt, pz);
   }
 
@@ -416,15 +404,6 @@ export class RaceSession {
         px - sin * dist * 0.35 + rightX * lateral,
         py + preset.height,
         pz - cos * dist * 0.35 + rightZ * lateral,
-      );
-    }
-
-    if (preset.kind === 'hood') {
-      const back = preset.distance ?? 1.2;
-      return new THREE.Vector3(
-        px - sin * back,
-        py + preset.height,
-        pz - cos * back,
       );
     }
 

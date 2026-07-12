@@ -10,6 +10,9 @@ const BASE = {
   drag: 0.55,
   rollingResistance: 2.2,
   steerSpeed: 2.4,
+  // Exponential rates for ramping digital A/D toward continuous steer.
+  steerResponse: 5.2,
+  steerReturn: 7.0,
   steerLimitAtSpeed: 0.42,
   grip: 7.0,
   handbrakeGrip: 1.6,
@@ -41,6 +44,8 @@ export class CarPhysics {
     this.heading = 0;
     this.velocity = { x: 0, z: 0 };
     this.speed = 0;
+    /** Smoothed steer in [-1, 1] — keyboard is digital, physics uses this. */
+    this.steer = 0;
     this.steerVisual = 0;
 
     this.maxHealth = stats.health;
@@ -62,6 +67,8 @@ export class CarPhysics {
       drag: BASE.drag,
       rollingResistance: BASE.rollingResistance,
       steerSpeed: BASE.steerSpeed * (0.8 + stats.grip * STAT_SCALE * 0.35),
+      steerResponse: BASE.steerResponse,
+      steerReturn: BASE.steerReturn,
       steerLimitAtSpeed: BASE.steerLimitAtSpeed,
       grip: BASE.grip * (0.75 + stats.grip * STAT_SCALE * 0.4),
       handbrakeGrip: BASE.handbrakeGrip,
@@ -80,6 +87,8 @@ export class CarPhysics {
     this.velocity.x = 0;
     this.velocity.z = 0;
     this.speed = 0;
+    this.steer = 0;
+    this.steerVisual = 0;
     this.health = this.maxHealth;
     this.boostActive = false;
     this.boostTimeLeft = 0;
@@ -217,9 +226,15 @@ export class CarPhysics {
     vFwd = Math.max(T.maxReverse, Math.min(maxSpd, vFwd));
     if (Math.abs(vFwd) < 0.05 && input.throttle === 0) vFwd = 0;
 
+    const targetSteer = Math.max(-1, Math.min(1, input.steer));
+    const releasing =
+      targetSteer === 0 || Math.sign(targetSteer) !== Math.sign(this.steer || targetSteer);
+    const steerRate = releasing ? T.steerReturn : T.steerResponse;
+    this.steer += (targetSteer - this.steer) * (1 - Math.exp(-steerRate * dt));
+
     const speedRatio = Math.min(Math.abs(vFwd) / maxSpd, 1);
     const authority = 1 - (1 - T.steerLimitAtSpeed) * speedRatio;
-    const steerAmount = input.steer * T.steerSpeed * authority;
+    const steerAmount = this.steer * T.steerSpeed * authority;
     const moveFactor = Math.min(Math.abs(vFwd) / 6, 1) * Math.sign(vFwd || 1);
     this.heading += steerAmount * moveFactor * dt;
 
@@ -253,7 +268,7 @@ export class CarPhysics {
     this.position.z += this.velocity.z * dt;
     this.speed = vFwd;
 
-    this.steerVisual += (input.steer * 0.45 - this.steerVisual) * Math.min(dt * 10, 1);
+    this.steerVisual += (this.steer * 0.45 - this.steerVisual) * (1 - Math.exp(-14 * dt));
   }
 
   get speedKmh() {
