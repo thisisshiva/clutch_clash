@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { performanceConfig, scaleTreeCount } from './PerformanceConfig.js';
 import { buildRannHeavenScenery } from './TrackRannScenery.js';
+import { buildSnowHeavenScenery } from './TrackSnowHeavenScenery.js';
 
 const _point = new THREE.Vector3();
 const _tangent = new THREE.Vector3();
@@ -272,6 +273,12 @@ export function buildTrackAtmosphere(curve, trackDef) {
   if (trackDef.id === 'road-to-heaven') {
     group.add(buildRannHeavenScenery(curve, trackDef, rng));
     addBillboard(group, curve, halfW, 0.42, 1, 'ROAD TO HEAVEN', 200);
+    return group;
+  }
+
+  if (trackDef.id === 'road-to-heaven-snow') {
+    group.add(buildSnowHeavenScenery(curve, trackDef, rng));
+    addBillboard(group, curve, halfW, 0.42, 1, 'FROZEN HEAVEN', 80);
     return group;
   }
 

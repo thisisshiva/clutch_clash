@@ -45,10 +45,27 @@ const RANN_HEAVEN = {
   clouds: false,
 };
 
+const SNOW_HEAVEN = {
+  background: 0x0c1a2e,
+  fogColor: 0x1a3048,
+  fogNear: 280,
+  fogFar: 9000,
+  exposure: 1.05,
+  hemisphere: { sky: 0x6a90c0, ground: 0x2a3a48, intensity: 0.55 },
+  sun: { color: 0xa8c4e8, intensity: 0.15, position: [80, 40, -60] },
+  fill: { color: 0x6a88b0, intensity: 0.35, position: [-70, 50, 90] },
+  moon: { color: 0xe8f0ff, intensity: 2.4, position: [-90, 180, 60] },
+  ground: { color: 0xd8e6f0, roughness: 0.98 },
+  splitTerrain: true,
+  clouds: false,
+  snow: true,
+};
+
 const PRESETS = {
   day: DAY,
   'rain-evening': RAIN_EVENING,
   'rann-heaven': RANN_HEAVEN,
+  'snow-heaven': SNOW_HEAVEN,
 };
 
 function resizeGround(env, trackLength = 0) {
@@ -139,6 +156,40 @@ function createRain(scene) {
   return { mesh: rain, speeds, spread, height };
 }
 
+function createSnow(scene) {
+  const count = 3200;
+  const positions = new Float32Array(count * 3);
+  const speeds = new Float32Array(count);
+  const spread = 280;
+  const height = 70;
+
+  for (let i = 0; i < count; i++) {
+    positions[i * 3] = (Math.random() - 0.5) * spread * 2;
+    positions[i * 3 + 1] = Math.random() * height;
+    positions[i * 3 + 2] = (Math.random() - 0.5) * spread * 2;
+    speeds[i] = 4 + Math.random() * 7;
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+  const snow = new THREE.Points(
+    geo,
+    new THREE.PointsMaterial({
+      color: 0xe8f4ff,
+      size: 0.55,
+      transparent: true,
+      opacity: 0.7,
+      depthWrite: false,
+    }),
+  );
+  snow.frustumCulled = false;
+  snow.name = 'track-snow';
+  scene.add(snow);
+
+  return { mesh: snow, speeds, spread, height, drift: true };
+}
+
 function createCloudLayer(scene, trackLength) {
   const group = new THREE.Group();
   group.name = 'track-clouds';
@@ -175,6 +226,9 @@ function updateRain(rain, camera, dt) {
 
   for (let i = 0; i < rain.speeds.length; i++) {
     arr[i * 3 + 1] -= rain.speeds[i] * dt;
+    if (rain.drift) {
+      arr[i * 3] += Math.sin(arr[i * 3 + 1] * 0.08 + i) * dt * 1.8;
+    }
     if (arr[i * 3 + 1] < 0) {
       arr[i * 3] = (Math.random() - 0.5) * rain.spread * 2;
       arr[i * 3 + 1] = rain.height + Math.random() * 10;
@@ -199,6 +253,10 @@ export function applyTrackEnvironment(engine, atmosphere = 'day', trackLength = 
   let offUpdate = null;
   if (preset.rain) {
     rain = createRain(engine.scene);
+    offUpdate = engine.onUpdate((dt) => updateRain(rain, engine.camera, dt));
+  }
+  if (preset.snow) {
+    rain = createSnow(engine.scene);
     offUpdate = engine.onUpdate((dt) => updateRain(rain, engine.camera, dt));
   }
   if (preset.clouds) {

@@ -21,7 +21,6 @@ const DAMAGE_SHAKE_DURATION = 2.0;
 const CAMERA_MODES = [
   { id: 'chase', label: 'Chase', kind: 'chase', distance: 13, height: 6, lookAt: 1.4, fov: 70, lerp: 5, speedPull: 1.5, speedFov: 14 },
   { id: 'close', label: 'Close', kind: 'chase', distance: 7, height: 3.2, lookAt: 0.95, fov: 58, lerp: 7, speedPull: 0.9, speedFov: 8 },
-  { id: 'top', label: 'Top Down', kind: 'top', height: 24, lookAt: 0.6, fov: 54, lerp: 6, speedFov: 3 },
   { id: 'cinematic', label: 'Cinematic', kind: 'chase', distance: 19, height: 9, lookAt: 1.2, fov: 62, lerp: 4, speedPull: 2.2, speedFov: 16 },
   { id: 'side', label: 'Side', kind: 'side', distance: 8, height: 3.6, lateral: 6.5, lookAt: 1.0, fov: 60, lerp: 6, speedPull: 1.0, speedFov: 10 },
 ];
@@ -392,10 +391,6 @@ export class RaceSession {
     const cos = Math.cos(h);
     const rightX = cos;
     const rightZ = -sin;
-
-    if (preset.kind === 'top') {
-      return new THREE.Vector3(px, py + preset.height, pz);
-    }
 
     if (preset.kind === 'side') {
       const dist = Math.max(4, (preset.distance ?? 8) - speedRatio * (preset.speedPull ?? 1));

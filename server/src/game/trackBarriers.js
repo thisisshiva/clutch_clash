@@ -7,23 +7,26 @@ export function getTrackBarriers(trackDef) {
   if (BARRIER_CACHE.has(trackDef.id)) return BARRIER_CACHE.get(trackDef.id);
 
   const barriers = [];
-  const segments = 420;
   const halfW = trackDef.roadWidth / 2;
-  const postEvery = 6;
   const closed = trackDef.closed !== false;
 
-  for (let i = 0; i < segments; i += postEvery) {
-    const t = i / segments;
-    const pos = splinePoint(trackDef.controlPoints, t, closed);
-    const [tx, tz] = splineTangent(trackDef.controlPoints, t, closed);
-    const nx = tz;
-    const nz = -tx;
-    for (const side of [1, -1]) {
-      barriers.push({
-        x: pos[0] + nx * (halfW + 1.2) * side,
-        z: pos[2] + nz * (halfW + 1.2) * side,
-        r: 0.35,
-      });
+  // Causeway tracks skip roadside posts (client matches via noBarriers / atmosphere).
+  if (!trackDef.noBarriers) {
+    const segments = 420;
+    const postEvery = 6;
+    for (let i = 0; i < segments; i += postEvery) {
+      const t = i / segments;
+      const pos = splinePoint(trackDef.controlPoints, t, closed);
+      const [tx, tz] = splineTangent(trackDef.controlPoints, t, closed);
+      const nx = tz;
+      const nz = -tx;
+      for (const side of [1, -1]) {
+        barriers.push({
+          x: pos[0] + nx * (halfW + 1.2) * side,
+          z: pos[2] + nz * (halfW + 1.2) * side,
+          r: 0.35,
+        });
+      }
     }
   }
 

@@ -54,28 +54,30 @@ export class TrackBuilder {
     roadGeo.setIndex(indices);
     roadGeo.computeVertexNormals();
     const isWet = def.atmosphere === 'rain-evening';
-    const isRann = def.atmosphere === 'rann-heaven' || def.id === 'road-to-heaven';
+    const isCauseway = def.atmosphere === 'rann-heaven' || def.atmosphere === 'snow-heaven'
+      || def.noBarriers;
+    const isSnow = def.atmosphere === 'snow-heaven';
     const road = new THREE.Mesh(
       roadGeo,
       new THREE.MeshStandardMaterial({
-        map: isRann ? makeDustyRoadTexture() : null,
-        color: isWet ? 0x3a3e48 : isRann ? 0xffffff : 0x5a5a64,
-        roughness: isWet ? 0.35 : isRann ? 0.97 : 0.88,
-        metalness: isWet ? 0.12 : 0,
+        map: isCauseway ? makeDustyRoadTexture() : null,
+        color: isWet ? 0x3a3e48 : isSnow ? 0xc8d4e0 : isCauseway ? 0xffffff : 0x5a5a64,
+        roughness: isWet ? 0.35 : isSnow ? 0.75 : isCauseway ? 0.97 : 0.88,
+        metalness: isWet ? 0.12 : isSnow ? 0.08 : 0,
       })
     );
     road.receiveShadow = true;
     this.group.add(road);
 
-    if (isRann) this._addCausewayShoulders(frames, halfW);
+    if (isCauseway) this._addCausewayShoulders(frames, halfW, isSnow);
 
     this._addRoadStripes(frames, halfW, def.laneCount || 1);
 
-    if (!isRann) {
+    if (!isCauseway) {
       this._addBarrierPosts(frames, halfW, segments, def);
     }
 
-    const startColor = isRann ? 0xf0f4ff : 0xff2244;
+    const startColor = isSnow ? 0xb8d4ff : isCauseway ? 0xf0f4ff : 0xff2244;
     this._addGate(this.def.checkpoints[0], startColor, true);
     for (let i = 1; i < this.def.checkpoints.length; i++) {
       this._addGate(this.def.checkpoints[i], 0x22ddff, false);
@@ -106,9 +108,9 @@ export class TrackBuilder {
     this.group.add(posts);
   }
 
-  _addCausewayShoulders(frames, halfW) {
+  _addCausewayShoulders(frames, halfW, isSnow = false) {
     const bermMat = new THREE.MeshStandardMaterial({
-      map: makeGravelShoulderTexture(),
+      map: isSnow ? makeSnowShoulderTexture() : makeGravelShoulderTexture(),
       roughness: 1,
     });
     const positions = [];
@@ -156,7 +158,12 @@ export class TrackBuilder {
 
   _addGate(checkpoint, color, isStart) {
     const halfW = this.def.roadWidth / 2 + 1.2;
-    const isRannStart = isStart && this.def.id === 'road-to-heaven';
+    const isCausewayStart = isStart && (
+      this.def.id === 'road-to-heaven' || this.def.id === 'road-to-heaven-snow'
+    );
+    const gateLabel = this.def.id === 'road-to-heaven-snow'
+      ? 'FROZEN HEAVEN'
+      : 'ROAD TO HEAVEN';
     const [px, , pz] = checkpoint.position;
     const [tx, tz] = checkpoint.tangent;
     const rotY = Math.atan2(tx, tz);
@@ -190,11 +197,11 @@ export class TrackBuilder {
     beam.position.y = 6;
     gate.add(beam);
 
-    if (isRannStart) {
+    if (isCausewayStart) {
       const sign = new THREE.Mesh(
         new THREE.PlaneGeometry(halfW * 1.75, 0.62),
         new THREE.MeshBasicMaterial({
-          map: makeGateTexture('ROAD TO HEAVEN'),
+          map: makeGateTexture(gateLabel),
           transparent: true,
           side: THREE.DoubleSide,
         }),
@@ -205,12 +212,12 @@ export class TrackBuilder {
 
     if (isStart) {
       const strip = new THREE.Mesh(
-        new THREE.PlaneGeometry(this.def.roadWidth, isRannStart ? 0.45 : 2.4),
+        new THREE.PlaneGeometry(this.def.roadWidth, isCausewayStart ? 0.45 : 2.4),
         new THREE.MeshBasicMaterial({
-          map: isRannStart ? null : makeCheckerTexture(),
-          color: isRannStart ? 0xe3ded1 : 0xffffff,
-          transparent: isRannStart,
-          opacity: isRannStart ? 0.78 : 1,
+          map: isCausewayStart ? null : makeCheckerTexture(),
+          color: isCausewayStart ? 0xe3ded1 : 0xffffff,
+          transparent: isCausewayStart,
+          opacity: isCausewayStart ? 0.78 : 1,
         }),
       );
       strip.rotation.x = -Math.PI / 2;
@@ -224,12 +231,14 @@ export class TrackBuilder {
   /** Dashed lane stripes + solid edge markings along the road surface. */
   _addRoadStripes(frames, halfW, laneCount) {
     const laneWidth = this.def.roadWidth / laneCount;
-    const isRann = this.def.id === 'road-to-heaven';
-    const stripeColor = isRann ? 0xe0ddd3 : 0xf4f4f4;
-    const stripeOpacity = isRann ? 0.72 : 1;
+    const isCauseway = this.def.atmosphere === 'rann-heaven'
+      || this.def.atmosphere === 'snow-heaven'
+      || this.def.noBarriers;
+    const stripeColor = isCauseway ? 0xe0ddd3 : 0xf4f4f4;
+    const stripeOpacity = isCauseway ? 0.72 : 1;
     const dashMat = new THREE.MeshBasicMaterial({
       color: stripeColor,
-      transparent: isRann,
+      transparent: isCauseway,
       opacity: stripeOpacity,
       polygonOffset: true,
       polygonOffsetFactor: -2,
@@ -237,15 +246,15 @@ export class TrackBuilder {
     });
     const edgeWhiteMat = new THREE.MeshBasicMaterial({
       color: stripeColor,
-      transparent: isRann,
+      transparent: isCauseway,
       opacity: stripeOpacity,
       polygonOffset: true,
       polygonOffsetFactor: -2,
       polygonOffsetUnits: -2,
     });
     const edgeYellowMat = new THREE.MeshBasicMaterial({
-      color: isRann ? stripeColor : 0xffcc00,
-      transparent: isRann,
+      color: isCauseway ? stripeColor : 0xffcc00,
+      transparent: isCauseway,
       opacity: stripeOpacity,
       polygonOffset: true,
       polygonOffsetFactor: -2,
@@ -390,6 +399,7 @@ function makeGateTexture(text) {
 }
 
 let gravelShoulderTexture;
+let snowShoulderTexture;
 
 /** Gravel shoulder: worn dark dirt near the asphalt fading into golden grit. */
 function makeGravelShoulderTexture() {
@@ -433,6 +443,37 @@ function makeGravelShoulderTexture() {
   gravelShoulderTexture.wrapT = THREE.RepeatWrapping;
   gravelShoulderTexture.colorSpace = THREE.SRGBColorSpace;
   return gravelShoulderTexture;
+}
+
+function makeSnowShoulderTexture() {
+  if (snowShoulderTexture) return snowShoulderTexture;
+  const size = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d');
+
+  const across = ctx.createLinearGradient(0, 0, size, 0);
+  across.addColorStop(0, '#9aa8b8');
+  across.addColorStop(0.3, '#d0dce8');
+  across.addColorStop(0.7, '#eef4fa');
+  across.addColorStop(1, '#ffffff');
+  ctx.fillStyle = across;
+  ctx.fillRect(0, 0, size, size);
+
+  for (let i = 0; i < 2800; i++) {
+    const x = Math.random() * size;
+    ctx.fillStyle = Math.random() > 0.4
+      ? `rgba(255, 255, 255, ${0.15 + Math.random() * 0.35})`
+      : `rgba(150, 170, 190, ${0.08 + Math.random() * 0.15})`;
+    const radius = 0.4 + Math.random() * 2;
+    ctx.fillRect(x, Math.random() * size, radius, radius);
+  }
+
+  snowShoulderTexture = new THREE.CanvasTexture(canvas);
+  snowShoulderTexture.wrapS = THREE.ClampToEdgeWrapping;
+  snowShoulderTexture.wrapT = THREE.RepeatWrapping;
+  snowShoulderTexture.colorSpace = THREE.SRGBColorSpace;
+  return snowShoulderTexture;
 }
 
 function makeDustyRoadTexture() {

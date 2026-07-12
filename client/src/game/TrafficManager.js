@@ -150,12 +150,12 @@ export class TrafficManager {
   }
 
   static supportsTrack(trackDef) {
-    if (trackDef.id === 'road-to-heaven') return true;
+    if (trackDef.id === 'road-to-heaven' || trackDef.id === 'road-to-heaven-snow') return true;
     return trackDef.id === 'mega-straight' && (trackDef.laneCount || 1) > 1;
   }
 
   static spawnCount(trackDef) {
-    if (trackDef.id === 'road-to-heaven') {
+    if (trackDef.id === 'road-to-heaven' || trackDef.id === 'road-to-heaven-snow') {
       return Math.min(trackDef.trafficCount ?? 8, performanceConfig.trafficMeshes);
     }
     if (trackDef.id === 'mega-straight') {
