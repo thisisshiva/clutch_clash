@@ -130,6 +130,21 @@ const TRACK_DEFS = [
     noBarriers: true,
     controlPoints: ROAD_TO_HEAVEN_CONTROL_POINTS,
   },
+  {
+    id: 'north-path',
+    name: 'Come to Canada',
+    description: 'Frozen Heaven skies — GetNorthPath brand run along the causeway',
+    atmosphere: 'snow-heaven',
+    closed: false,
+    startT: 0.01,
+    checkpointCount: 6,
+    laps: 1,
+    laneCount: 2,
+    roadWidth: 13,
+    trafficCount: 8,
+    noBarriers: true,
+    controlPoints: ROAD_TO_HEAVEN_CONTROL_POINTS,
+  },
 ];
 
 const MAX_PLAYERS = 8;

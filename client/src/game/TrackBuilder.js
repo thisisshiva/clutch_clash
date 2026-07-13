@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { buildTrackAtmosphere } from './TrackAtmosphere.js';
 import { performanceTier } from './PerformanceConfig.js';
+import { makeNorthPathWordmarkTexture } from './TrackNorthPathScenery.js';
 
 /**
  * Factory - turns a track definition (spline control points + checkpoints)
@@ -84,7 +85,9 @@ export class TrackBuilder {
       this._addBarrierPosts(frames, halfW, segments, def);
     }
 
-    const startColor = isSnow ? 0xb8d4ff : isCauseway ? 0xf0f4ff : 0xff2244;
+    const startColor = this.def.id === 'north-path'
+      ? 0xc62828
+      : isSnow ? 0xb8d4ff : isCauseway ? 0xf0f4ff : 0xff2244;
     if (this.showGates) {
       this._addGate(this.def.checkpoints[0], startColor, true);
       for (let i = 1; i < this.def.checkpoints.length; i++) {
@@ -221,8 +224,11 @@ export class TrackBuilder {
 
   _addGate(checkpoint, color, isStart) {
     const halfW = this.def.roadWidth / 2 + 1.2;
+    const isNorthPath = this.def.id === 'north-path';
     const isCausewayStart = isStart && (
-      this.def.id === 'road-to-heaven' || this.def.id === 'road-to-heaven-snow'
+      this.def.id === 'road-to-heaven'
+      || this.def.id === 'road-to-heaven-snow'
+      || isNorthPath
     );
     const gateLabel = this.def.id === 'road-to-heaven-snow'
       ? 'FROZEN HEAVEN'
@@ -235,7 +241,10 @@ export class TrackBuilder {
     gate.rotation.y = rotY;
 
     const pillarGeo = new THREE.CylinderGeometry(0.28, 0.28, 6, 10);
-    const pillarMat = new THREE.MeshStandardMaterial({ color: 0x6a6a78, roughness: 0.55 });
+    const pillarMat = new THREE.MeshStandardMaterial({
+      color: isNorthPath ? 0x1a2a44 : 0x6a6a78,
+      roughness: 0.55,
+    });
     const cos = Math.cos(rotY);
     const sin = Math.sin(rotY);
     for (const side of [1, -1]) {
@@ -261,16 +270,31 @@ export class TrackBuilder {
     gate.add(beam);
 
     if (isCausewayStart) {
+      const signMat = new THREE.MeshBasicMaterial({
+        map: isNorthPath ? null : makeGateTexture(gateLabel),
+        color: isNorthPath ? 0xffffff : 0xffffff,
+        transparent: true,
+        side: THREE.DoubleSide,
+      });
       const sign = new THREE.Mesh(
-        new THREE.PlaneGeometry(halfW * 1.75, 0.62),
-        new THREE.MeshBasicMaterial({
-          map: makeGateTexture(gateLabel),
-          transparent: true,
-          side: THREE.DoubleSide,
-        }),
+        new THREE.PlaneGeometry(halfW * (isNorthPath ? 2.1 : 1.75), isNorthPath ? 0.78 : 0.62),
+        signMat,
       );
       sign.position.set(0, 6, -0.36);
       gate.add(sign);
+      if (isNorthPath) {
+        makeNorthPathWordmarkTexture('gate').then((tex) => {
+          if (this.group.userData.disposed) {
+            tex.dispose();
+            return;
+          }
+          signMat.map = tex;
+          signMat.needsUpdate = true;
+        }).catch(() => {
+          signMat.map = makeGateTexture('NORTH PATH');
+          signMat.needsUpdate = true;
+        });
+      }
     }
 
     if (isStart) {
@@ -278,7 +302,7 @@ export class TrackBuilder {
         new THREE.PlaneGeometry(this.def.roadWidth, isCausewayStart ? 0.45 : 2.4),
         new THREE.MeshBasicMaterial({
           map: isCausewayStart ? null : makeCheckerTexture(),
-          color: isCausewayStart ? 0xe3ded1 : 0xffffff,
+          color: isCausewayStart ? (isNorthPath ? 0xd8e0e8 : 0xe3ded1) : 0xffffff,
           transparent: isCausewayStart,
           opacity: isCausewayStart ? 0.78 : 1,
         }),

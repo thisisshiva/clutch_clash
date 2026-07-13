@@ -61,11 +61,28 @@ const SNOW_HEAVEN = {
   snow: true,
 };
 
+/** Canadian dawn — indigo sky warming to amber, cool fog, soft gold sun. */
+const NORTH_PATH_DAWN = {
+  background: 0x7aa8c8,
+  fogColor: 0xb8cfe0,
+  fogNear: 420,
+  fogFar: 10000,
+  exposure: 1.18,
+  hemisphere: { sky: 0xd4e8f5, ground: 0x6a7a68, intensity: 0.92 },
+  sun: { color: 0xffd9a0, intensity: 2.15, position: [100, 55, -160] },
+  fill: { color: 0xc8daf0, intensity: 0.55, position: [-90, 60, 80] },
+  moon: { color: 0xc8d8ff, intensity: 0, position: [-90, 140, 70] },
+  ground: { color: 0x8a9a7e, roughness: 0.97 },
+  splitTerrain: true,
+  clouds: false,
+};
+
 const PRESETS = {
   day: DAY,
   'rain-evening': RAIN_EVENING,
   'rann-heaven': RANN_HEAVEN,
   'snow-heaven': SNOW_HEAVEN,
+  'north-path-dawn': NORTH_PATH_DAWN,
 };
 
 function resizeGround(env, trackLength = 0) {
@@ -108,7 +125,7 @@ function applyPreset(engine, preset, trackLength = 0) {
 
   if (trackLength > 0) resizeGround(env, trackLength);
 
-  const camFar = Math.min(16000, Math.max(7000, trackLength + 2200));
+  const camFar = Math.min(22000, Math.max(7000, trackLength + 5000));
   engine.camera.far = camFar;
   engine.camera.near = 0.5;
   engine.camera.updateProjectionMatrix();

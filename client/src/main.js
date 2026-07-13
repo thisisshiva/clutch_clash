@@ -21,6 +21,7 @@ import { TheaterMusic } from './voice/TheaterMusic.js';
 import { TheaterRecorder } from './game/TheaterRecorder.js';
 import { getSelectedCarId } from './game/carPreferences.js';
 import { preloadCars } from './game/CarFactory.js';
+import { makeNorthPathIntroLogoCanvas } from './game/TrackNorthPathScenery.js';
 
 // ---------------------------------------------------------------------------
 // App-level singletons
@@ -35,7 +36,6 @@ const theaterRecorder = new TheaterRecorder(
   () => theaterMusic.element,
   {
     getOverlayCanvas: getTheaterIntroCanvas,
-    onComplete: (filename) => toast(`Downloaded ${filename}`),
   },
 );
 
@@ -279,12 +279,12 @@ async function startTheaterMode(trackId) {
 
   hud?.showLoading(false);
   session.startTheaterDrive();
-  const musicSrc = base.id === 'road-to-heaven'
-    ? '/audio/windy-road-back-to-you.mp3'
-    : '/audio/bring-it-together.mp3';
-  const songName = base.id === 'road-to-heaven'
-    ? 'Windy Road Back To You'
-    : 'Bring It Together';
+  const musicSrc = base.id === 'road-to-heaven-snow'
+    ? '/audio/bring-it-together.mp3'
+    : '/audio/windy-road-back-to-you.mp3';
+  const songName = base.id === 'road-to-heaven-snow'
+    ? 'Bring It Together'
+    : 'Windy Road Back To You';
   await theaterMusic.start(musicSrc);
   const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
   const slug = String(base.id || 'theater').replace(/[^a-z0-9-]+/gi, '-');
@@ -292,15 +292,27 @@ async function startTheaterMode(trackId) {
     durationMs: 60_000,
     filename: `${slug}-theater-${stamp}.webm`,
   });
-  if (started) toast('Recording theater — download starts in 60s');
-  else toast('Theater recording unavailable in this browser');
+  if (!started) toast('Theater recording unavailable in this browser');
 
   const introWords = String(base.name || 'Theater')
     .replace(/[·•|/]/g, ' ')
     .split(/\s+/)
     .filter(Boolean)
     .map((word) => word.toUpperCase());
-  await playTheaterIntro(introWords.length ? introWords : ['THEATER'], { songName });
+  let brandLogoCanvas = null;
+  if (base.id === 'north-path') {
+    try {
+      brandLogoCanvas = await makeNorthPathIntroLogoCanvas();
+    } catch (err) {
+      console.warn('North Path intro logo failed.', err);
+    }
+  }
+  await playTheaterIntro(introWords.length ? introWords : ['THEATER'], {
+    songName: base.id === 'north-path' ? '' : songName,
+    brandLogoCanvas,
+    skipSong: base.id === 'north-path',
+    skipCountdown: base.id === 'north-path',
+  });
   if (!theaterActive || !session) return;
   session.beginTheaterCameraFlow();
 }

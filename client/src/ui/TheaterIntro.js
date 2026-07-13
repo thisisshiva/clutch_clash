@@ -2,17 +2,19 @@
  * Cinematic theater intro drawn on a transparent canvas overlay so it
  * appears on screen and can be composited into the theater recording.
  *
- * Sequence: map-name words → song name → 3 → 2 → 1 → clear
+ * Sequence: map-name words → [brand logo] → song name → 3 → 2 → 1 → clear
  * Black overlay stays constant for the whole intro (no flash between beats).
  *
  * @param {string[]} words
- * @param {{ songName?: string }} [opts]
+ * @param {{ songName?: string, brandLogoCanvas?: HTMLCanvasElement|null, skipSong?: boolean, skipCountdown?: boolean }} [opts]
  * @returns {Promise<void>}
  */
 export function playTheaterIntro(words = ['THEATER'], opts = {}) {
   const sequence = (words.length ? words : ['THEATER']).map((w) => String(w).toUpperCase());
   const countdown = ['3', '2', '1'];
-  const songName = String(opts.songName || '').trim();
+  const songName = opts.skipSong ? '' : String(opts.songName || '').trim();
+  const brandLogo = opts.brandLogoCanvas || null;
+  const skipCountdown = !!opts.skipCountdown;
 
   const canvas = document.createElement('canvas');
   canvas.className = 'theater-intro-canvas';
@@ -27,6 +29,9 @@ export function playTheaterIntro(words = ['THEATER'], opts = {}) {
   let textAlpha = 0;
   let scale = 0.85;
   let songMode = false;
+  let logoAlpha = 0;
+  let logoScale = 0.85;
+  let showLogo = false;
   let raf = 0;
 
   function resize() {
@@ -53,6 +58,18 @@ export function playTheaterIntro(words = ['THEATER'], opts = {}) {
       g.addColorStop(1, `rgba(0, 0, 0, ${0.28 * overlay})`);
       ctx.fillStyle = g;
       ctx.fillRect(0, 0, w, h);
+    }
+
+    if (showLogo && brandLogo && logoAlpha > 0.01) {
+      const maxW = w * 0.72;
+      const maxH = h * 0.28;
+      const fit = Math.min(maxW / brandLogo.width, maxH / brandLogo.height) * logoScale;
+      const dw = brandLogo.width * fit;
+      const dh = brandLogo.height * fit;
+      ctx.save();
+      ctx.globalAlpha = logoAlpha;
+      ctx.drawImage(brandLogo, (w - dw) * 0.5, (h - dh) * 0.48, dw, dh);
+      ctx.restore();
     }
 
     if (textAlpha > 0.01 && text) {
@@ -114,9 +131,28 @@ export function playTheaterIntro(words = ['THEATER'], opts = {}) {
   async function showWord(word, { holdMs = 1100, asSong = false } = {}) {
     text = word;
     songMode = asSong;
+    showLogo = false;
     await animateTextIn();
     await hold(holdMs);
     await animateTextOut();
+  }
+
+  async function showBrandLogo({ holdMs = 1800 } = {}) {
+    if (!brandLogo) return;
+    text = '';
+    textAlpha = 0;
+    showLogo = true;
+    await tween(360, (t) => {
+      logoAlpha = t;
+      logoScale = 0.82 + t * 0.18;
+    });
+    await hold(holdMs);
+    await tween(280, (t) => {
+      logoAlpha = 1 - t;
+      logoScale = 1 + t * 0.06;
+    });
+    showLogo = false;
+    logoAlpha = 0;
   }
 
   return (async () => {
@@ -128,14 +164,19 @@ export function playTheaterIntro(words = ['THEATER'], opts = {}) {
         if (disposed) return;
       }
 
+      await showBrandLogo();
+      if (disposed) return;
+
       if (songName) {
         await showWord(songName.toUpperCase(), { holdMs: 1600, asSong: true });
         if (disposed) return;
       }
 
-      for (const n of countdown) {
-        await showWord(n, { holdMs: 750 });
-        if (disposed) return;
+      if (!skipCountdown) {
+        for (const n of countdown) {
+          await showWord(n, { holdMs: 750 });
+          if (disposed) return;
+        }
       }
 
       await tween(500, (t) => { overlay = 1 - t; });

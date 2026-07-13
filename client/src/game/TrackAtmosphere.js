@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { performanceConfig, scaleTreeCount } from './PerformanceConfig.js';
 import { buildRannHeavenScenery } from './TrackRannScenery.js';
 import { buildSnowHeavenScenery } from './TrackSnowHeavenScenery.js';
+import { addNorthPathBrandMonument } from './TrackNorthPathScenery.js';
 
 const _point = new THREE.Vector3();
 const _tangent = new THREE.Vector3();
@@ -283,6 +284,16 @@ export function buildTrackAtmosphere(curve, trackDef) {
     if (!trackDef.theaterMode) {
       addBillboard(group, curve, halfW, 0.42, 1, 'FROZEN HEAVEN', 80);
     }
+    return group;
+  }
+
+  if (trackDef.id === 'north-path') {
+    // Same Frozen Heaven world for now; brand monument is the differentiator.
+    const snow = buildSnowHeavenScenery(curve, trackDef, rng);
+    group.add(snow);
+    addNorthPathBrandMonument(group, curve, halfW).catch((err) => {
+      console.warn('North Path brand monument could not load.', err);
+    });
     return group;
   }
 

@@ -1,7 +1,9 @@
 import { el, splitLayout } from './dom.js';
 
 function isTheaterTrack(track) {
-  return track?.id === 'road-to-heaven' || track?.id === 'road-to-heaven-snow';
+  return track?.id === 'road-to-heaven'
+    || track?.id === 'road-to-heaven-snow'
+    || track?.id === 'north-path';
 }
 
 /**
