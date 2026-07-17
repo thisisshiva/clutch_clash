@@ -19,6 +19,7 @@ import { FriendsScreen } from './ui/FriendsScreen.js';
 import { playTheaterIntro, getTheaterIntroCanvas } from './ui/TheaterIntro.js';
 import { TheaterMusic } from './voice/TheaterMusic.js';
 import { TheaterRecorder } from './game/TheaterRecorder.js';
+import { uploadTheaterVideo, waitForPublishJob } from './net/publishClient.js';
 import { getSelectedCarId } from './game/carPreferences.js';
 import { preloadCars } from './game/CarFactory.js';
 import { makeNorthPathIntroLogoCanvas } from './game/TrackNorthPathScenery.js';
@@ -35,9 +36,12 @@ const theaterRecorder = new TheaterRecorder(
   document.getElementById('game-canvas'),
   () => theaterMusic.element,
   {
+    engine,
     getOverlayCanvas: getTheaterIntroCanvas,
+    onComplete: (filename, blob) => publishTheaterVideo(filename, blob),
   },
 );
+let theaterTrackName = '';
 
 let tracks = [];
 let room = null;          // latest room:update payload
@@ -222,14 +226,72 @@ function disposeSession() {
   session = null;
 }
 
+async function publishTheaterVideo(filename, blob) {
+  if (!blob?.size) return;
+
+  // Drop theater load before the heavy upload so the browser stays responsive.
+  freezeTheaterForPublish();
+
+  try {
+    toast('Publishing theater video (high quality encode may take a few minutes)…');
+    const jobId = await uploadTheaterVideo(blob, {
+      filename,
+      trackName: theaterTrackName || 'Slow Lane',
+    });
+    const job = await waitForPublishJob(jobId, { timeoutMs: 600_000, intervalMs: 3000 });
+    if (!job) {
+      toast('Publishing is taking a while — check the server logs');
+      return;
+    }
+    if (job.status === 'failed') {
+      toast(`Publishing failed: ${job.error}`);
+      console.error('[publish] job failed', job);
+      return;
+    }
+    if (job.youtube?.status === 'error') {
+      console.error('[publish] YouTube error', job.youtube.error);
+    }
+    console.log('[publish] job result', job);
+
+    const parts = [];
+    if (job.youtube?.status === 'uploaded-private') {
+      parts.push('YouTube video: private draft ready');
+      parts.push('YouTube Short: private draft ready');
+    } else if (job.youtube?.status && job.youtube.status !== 'skipped') {
+      parts.push(`YouTube: ${job.youtube.status}`);
+    }
+    toast(parts.length ? parts.join(' · ') : 'Publish finished');
+    if (job.youtube?.standard?.url) console.log('[publish] YouTube standard', job.youtube.standard.url);
+    if (job.youtube?.shorts?.url) console.log('[publish] YouTube Shorts', job.youtube.shorts.url);
+  } catch (err) {
+    console.error('Theater publish failed', err);
+    toast(err.message || 'Could not upload video for publishing');
+  }
+}
+
+/** Stop theater session/music and restore normal render sizing before upload. */
+function freezeTheaterForPublish() {
+  theaterActive = false;
+  clearInterval(theaterHudTimer);
+  theaterHudTimer = null;
+  theaterMusic.stop();
+  disposeSession();
+  engine.endTheaterCapture();
+  hud = null;
+  minimap = null;
+  setRoomBadge(null);
+  showMenu();
+}
+
 function exitTheater() {
   theaterActive = false;
   clearInterval(theaterHudTimer);
   theaterHudTimer = null;
-  // Keep whatever was recorded and download it if still capturing.
+  // Keep whatever was recorded and publish it if still capturing.
   if (theaterRecorder.recording) theaterRecorder.stop();
   theaterMusic.stop();
   disposeSession();
+  engine.endTheaterCapture();
   hud = null;
   minimap = null;
   setRoomBadge(null);
@@ -255,6 +317,7 @@ async function startTheaterMode(trackId) {
   lobby = null;
   setRoomBadge(null);
 
+  theaterTrackName = base.name || base.id || 'Slow Lane';
   const trackDef = { ...base, theaterMode: true };
   showHud(trackDef, { theater: true });
   hud?.showLoading(true);
@@ -278,6 +341,7 @@ async function startTheaterMode(trackId) {
   }
 
   hud?.showLoading(false);
+  engine.beginTheaterCapture({ width: 1920, height: 1080 });
   session.startTheaterDrive();
   const musicSrc = base.id === 'road-to-heaven-snow'
     ? '/audio/bring-it-together.mp3'
@@ -291,6 +355,8 @@ async function startTheaterMode(trackId) {
   const started = await theaterRecorder.start({
     durationMs: 60_000,
     filename: `${slug}-theater-${stamp}.webm`,
+    width: 1920,
+    height: 1080,
   });
   if (!started) toast('Theater recording unavailable in this browser');
 
@@ -324,6 +390,7 @@ function cleanupRoom() {
   theaterRecorder.stop(true);
   theaterMusic.stop(true);
   disposeSession();
+  engine.endTheaterCapture();
   voice?.stop();
   voiceState = 'off';
   remotePlayers.clear();

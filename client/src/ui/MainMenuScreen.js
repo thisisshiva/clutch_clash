@@ -34,7 +34,7 @@ export function MainMenuScreen({ onCreateRoom, onTheaterMode, onJoinRoom, onFrie
   return splitLayout(
     [
       el('div.game-pane-label', {}, 'Live preview'),
-      el('div.logo', {}, 'Clutch Clash'),
+      el('div.logo', {}, 'Slow Lane'),
       el('div.tagline', {}, `Welcome, ${authService.displayName}`),
       el('div.game-pane-meta', {}, 'Join a friend\'s room or create your own race.'),
       el('div.pane-section', {},

@@ -10,6 +10,8 @@ import { getTrackList, getAllTracks } from './game/tracks.js';
 import { registerLobbyHandlers } from './sockets/lobbyHandlers.js';
 import { registerRaceHandlers } from './sockets/raceHandlers.js';
 import { registerVoiceHandlers } from './sockets/voiceHandlers.js';
+import { registerPublishRoutes } from './publish/routes.js';
+import { LOG_FILE } from './publish/logger.js';
 import { ROOM_STATUS } from './rooms/Room.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -26,6 +28,7 @@ app.get('/api/tracks/full', (_req, res) => res.json(getAllTracks()));
 app.get('/api/health', (_req, res) =>
   res.json({ ok: true, rooms: roomManager.rooms.size })
 );
+registerPublishRoutes(app);
 
 // Serve built client in production (client/dist).
 const distDir = path.resolve(__dirname, '../../client/dist');
@@ -60,4 +63,5 @@ setInterval(() => {
 
 server.listen(env.port, () => {
   console.log(`[clutch-clash] server listening on http://localhost:${env.port}`);
+  console.log(`[publish] errors logged to ${LOG_FILE}`);
 });

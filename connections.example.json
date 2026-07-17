@@ -1,0 +1,24 @@
+{
+  "dryRun": false,
+  "publicBaseUrl": "",
+  "platforms": {
+    "youtube": {
+      "enabled": true,
+      "credentials": {
+        "clientId": "",
+        "clientSecret": "",
+        "refreshToken": ""
+      }
+    },
+    "instagram": {
+      "enabled": false,
+      "credentials": {
+          "accessToken": "",
+          "instagramBusinessAccountId": "",
+          "facebookPageId": "",
+          "facebookAppId": "",
+          "facebookAppSecret": ""
+      }
+    }
+  }
+}

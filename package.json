@@ -2,7 +2,7 @@
   "name": "clutch-clash",
   "version": "1.0.0",
   "private": true,
-  "description": "Clutch Clash - multiplayer 3D F1-style track racing game",
+  "description": "Slow Lane - cinematic arcade racing game",
   "workspaces": [
     "server",
     "client"
@@ -11,7 +11,8 @@
     "dev": "concurrently -n server,client -c blue,magenta \"npm run dev -w server\" \"npm run dev -w client\"",
     "dev:https": "concurrently -n server,client -c blue,magenta \"npm run dev -w server\" \"npm run dev:https -w client\"",
     "build": "npm run build -w client",
-    "start": "npm run start -w server"
+    "start": "npm run start -w server",
+    "youtube-oauth": "npm run youtube-oauth -w server"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

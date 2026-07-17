@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { performanceConfig } from '../game/PerformanceConfig.js';
+import { BackgroundTicker } from './BackgroundTicker.js';
 
 /**
  * Owns the renderer, scene graph, camera and the render loop.
@@ -8,7 +9,13 @@ import { performanceConfig } from '../game/PerformanceConfig.js';
 export class Engine {
   constructor(canvas) {
     this.canvas = canvas;
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    this.renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: true,
+      // Required so theater recording can drawImage the WebGL canvas.
+      // Without this the buffer is cleared after present → black video.
+      preserveDrawingBuffer: true,
+    });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.shadowMap.enabled = true;
@@ -85,11 +92,7 @@ export class Engine {
     if (this._running) return;
     this._running = true;
     this._clock.start();
-    this.renderer.setAnimationLoop(() => {
-      const dt = Math.min(this._clock.getDelta(), 1 / 20);
-      for (const fn of this._updateCallbacks) fn(dt);
-      this.renderer.render(this.scene, this.camera);
-    });
+    this.renderer.setAnimationLoop(() => this._frame());
   }
 
   stop() {
@@ -97,10 +100,79 @@ export class Engine {
     this.renderer.setAnimationLoop(null);
   }
 
+  _frame() {
+    const dt = Math.min(this._clock.getDelta(), 1 / 20);
+    for (const fn of this._updateCallbacks) fn(dt);
+    this.renderer.render(this.scene, this.camera);
+    // Capture immediately after present so MediaRecorder never sees a cleared buffer.
+    this._afterRender?.();
+  }
+
+  /** Optional hook run after each WebGL present (used by TheaterRecorder). */
+  setAfterRender(fn) {
+    this._afterRender = typeof fn === 'function' ? fn : null;
+  }
+
   resize() {
+    if (this._theaterCapture) {
+      this.camera.aspect = this._theaterCapture.width / this._theaterCapture.height;
+      this.camera.updateProjectionMatrix();
+      this.renderer.setSize(this._theaterCapture.width, this._theaterCapture.height, false);
+      return;
+    }
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+  }
+
+  /**
+   * Lock the WebGL buffer to a fixed capture size (CSS canvas still fills the
+   * window). Stable frames + known resolution for theater recording.
+   */
+  beginTheaterCapture({ width = 1920, height = 1080 } = {}) {
+    if (this._theaterCapture) return;
+    this._theaterCapture = {
+      width,
+      height,
+      pixelRatio: this.renderer.getPixelRatio(),
+    };
+    this.renderer.setPixelRatio(1);
+    this.camera.aspect = width / height;
+    this.camera.updateProjectionMatrix();
+    this.renderer.setSize(width, height, false);
+
+    // rAF pauses in hidden tabs; hand rendering to a worker ticker so the
+    // recording keeps advancing when the user switches tabs/apps.
+    this._onVisibility = () => this._syncBackgroundLoop();
+    document.addEventListener('visibilitychange', this._onVisibility);
+    this._syncBackgroundLoop();
+  }
+
+  endTheaterCapture() {
+    if (!this._theaterCapture) return;
+    if (this._onVisibility) {
+      document.removeEventListener('visibilitychange', this._onVisibility);
+      this._onVisibility = null;
+    }
+    this._bgTicker?.stop();
+    this._bgTicker = null;
+    const saved = this._theaterCapture.pixelRatio;
+    this._theaterCapture = null;
+    this.renderer.setPixelRatio(Math.min(saved || window.devicePixelRatio || 1, 2));
+    this.resize();
+  }
+
+  _syncBackgroundLoop() {
+    const needsTicker = document.hidden && this._theaterCapture && this._running;
+    if (needsTicker && !this._bgTicker) {
+      this._bgTicker = new BackgroundTicker(30);
+      this._bgTicker.start(() => {
+        if (this._running && document.hidden) this._frame();
+      });
+    } else if (!needsTicker && this._bgTicker) {
+      this._bgTicker.stop();
+      this._bgTicker = null;
+    }
   }
 
   /** Recursively dispose an object's geometries/materials and remove it. */

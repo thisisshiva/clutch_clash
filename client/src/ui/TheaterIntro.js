@@ -1,9 +1,14 @@
+import { BackgroundTicker } from '../core/BackgroundTicker.js';
+
 /**
  * Cinematic theater intro drawn on a transparent canvas overlay so it
  * appears on screen and can be composited into the theater recording.
  *
  * Sequence: map-name words → [brand logo] → song name → 3 → 2 → 1 → clear
  * Black overlay stays constant for the whole intro (no flash between beats).
+ *
+ * Animation is driven by a worker ticker (not rAF) so the intro — and the
+ * recording of it — keeps running when the tab is hidden.
  *
  * @param {string[]} words
  * @param {{ songName?: string, brandLogoCanvas?: HTMLCanvasElement|null, skipSong?: boolean, skipCountdown?: boolean }} [opts]
@@ -32,7 +37,8 @@ export function playTheaterIntro(words = ['THEATER'], opts = {}) {
   let logoAlpha = 0;
   let logoScale = 0.85;
   let showLogo = false;
-  let raf = 0;
+  const activeTweens = new Set();
+  const ticker = new BackgroundTicker(30);
 
   function resize() {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -88,10 +94,24 @@ export function playTheaterIntro(words = ['THEATER'], opts = {}) {
       ctx.fillText(text, 0, 0);
       ctx.restore();
     }
-
-    raf = requestAnimationFrame(draw);
   }
-  raf = requestAnimationFrame(draw);
+
+  function stepTweens() {
+    const now = performance.now();
+    for (const tw of activeTweens) {
+      const t = Math.min(1, (now - tw.start) / tw.ms);
+      tw.fn(easeOutCubic(t));
+      if (t >= 1 || disposed) {
+        activeTweens.delete(tw);
+        tw.resolve();
+      }
+    }
+  }
+
+  ticker.start(() => {
+    stepTweens();
+    draw();
+  });
 
   function animateTextIn() {
     return tween(280, (t) => {
@@ -107,24 +127,15 @@ export function playTheaterIntro(words = ['THEATER'], opts = {}) {
     });
   }
 
+  // hold/tween ride the worker ticker: setTimeout/rAF are throttled or
+  // paused in hidden tabs, which would stall the intro sequence.
   function hold(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+    return tween(ms, () => {});
   }
 
   function tween(ms, fn) {
     return new Promise((resolve) => {
-      const start = performance.now();
-      function step(now) {
-        if (disposed) {
-          resolve();
-          return;
-        }
-        const t = Math.min(1, (now - start) / ms);
-        fn(easeOutCubic(t));
-        if (t < 1) requestAnimationFrame(step);
-        else resolve();
-      }
-      requestAnimationFrame(step);
+      activeTweens.add({ start: performance.now(), ms, fn, resolve });
     });
   }
 
@@ -183,7 +194,9 @@ export function playTheaterIntro(words = ['THEATER'], opts = {}) {
       await hold(120);
     } finally {
       disposed = true;
-      cancelAnimationFrame(raf);
+      ticker.stop();
+      for (const tw of activeTweens) tw.resolve();
+      activeTweens.clear();
       window.removeEventListener('resize', resize);
       canvas.remove();
       if (activeIntroCanvas === canvas) activeIntroCanvas = null;

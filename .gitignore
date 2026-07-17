@@ -4,3 +4,8 @@ dist/
 *.local
 .DS_Store
 *.zip
+# Social publishing secrets + uploaded recordings
+connections.json
+server/uploads/
+server/jobs/
+server/logs/

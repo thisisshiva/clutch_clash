@@ -82,7 +82,7 @@ export function LoginScreen({ onDone }) {
   }
 
   return el('div.screen', {},
-    el('div.logo', {}, 'Clutch Clash'),
+    el('div.logo', {}, 'Slow Lane'),
     el('div.tagline', {}, 'Multiplayer F1 Racing - Full speed with your friends'),
     el('div.panel', { style: 'width:400px' },
       el('div.tabs', {}, tabs),
