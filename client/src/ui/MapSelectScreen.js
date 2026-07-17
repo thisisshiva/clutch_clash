@@ -3,7 +3,10 @@ import { el, splitLayout } from './dom.js';
 function isTheaterTrack(track) {
   return track?.id === 'road-to-heaven'
     || track?.id === 'road-to-heaven-snow'
-    || track?.id === 'north-path';
+    || track?.id === 'north-path'
+    || track?.id === 'chapmans-peak'
+    || track?.id === 'black-hole'
+    || track?.id === 'road-to-endless';
 }
 
 /**

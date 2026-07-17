@@ -77,12 +77,65 @@ const NORTH_PATH_DAWN = {
   clouds: false,
 };
 
+/** Cape Town golden hour — low warm sun over the ocean, bluer haze so the sea reads. */
+export const CHAPMANS_PEAK_SUN = [180, 52, 90];
+
+const CHAPMANS_PEAK = {
+  background: 0xd8b890,
+  fogColor: 0xc8b4a4,
+  fogNear: 1800,
+  fogFar: 10000,
+  exposure: 1.28,
+  hemisphere: { sky: 0xf2dcc4, ground: 0x7a6450, intensity: 0.88 },
+  sun: { color: 0xffc98a, intensity: 2.65, position: CHAPMANS_PEAK_SUN },
+  fill: { color: 0xb8c8dc, intensity: 0.28, position: [140, 70, -90] },
+  moon: { color: 0xc8d8ff, intensity: 0, position: [-90, 140, 70] },
+  ground: { color: 0x8a7a5e, roughness: 0.97 },
+  splitTerrain: true,
+  clouds: true,
+};
+
+/** Cosmic void — deep indigo, soft violet rim (not hot neon pink). */
+const BLACK_HOLE = {
+  background: 0x050810,
+  fogColor: 0x0a0c18,
+  fogNear: 500,
+  fogFar: 5600,
+  exposure: 0.98,
+  hemisphere: { sky: 0x1c1830, ground: 0x080610, intensity: 0.42 },
+  sun: { color: 0xb8a0d8, intensity: 1.15, position: [40, 30, 200] },
+  fill: { color: 0x4a5a88, intensity: 0.35, position: [-120, 50, -80] },
+  moon: { color: 0x6a7aaa, intensity: 0.45, position: [-60, 120, 40] },
+  ground: { color: 0x050508, roughness: 1 },
+  splitTerrain: true,
+  clouds: false,
+};
+
+/** Infinite desert highway — bleached sky, soft heat haze, endless flat. */
+const ENDLESS_DESERT = {
+  background: 0xe8d4b0,
+  fogColor: 0xe2d0b4,
+  fogNear: 900,
+  fogFar: 14000,
+  exposure: 1.32,
+  hemisphere: { sky: 0xf5e6c8, ground: 0xc4a878, intensity: 1.05 },
+  sun: { color: 0xffe8b0, intensity: 2.7, position: [60, 28, 180] },
+  fill: { color: 0xd8c8a8, intensity: 0.4, position: [-100, 40, -60] },
+  moon: { color: 0xc8d8ff, intensity: 0, position: [-90, 140, 70] },
+  ground: { color: 0xc9ae7a, roughness: 0.98 },
+  splitTerrain: true,
+  clouds: true,
+};
+
 const PRESETS = {
   day: DAY,
   'rain-evening': RAIN_EVENING,
   'rann-heaven': RANN_HEAVEN,
   'snow-heaven': SNOW_HEAVEN,
   'north-path-dawn': NORTH_PATH_DAWN,
+  'chapmans-peak': CHAPMANS_PEAK,
+  'black-hole': BLACK_HOLE,
+  'endless-desert': ENDLESS_DESERT,
 };
 
 function resizeGround(env, trackLength = 0) {

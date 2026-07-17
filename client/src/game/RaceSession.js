@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createCar, disposeCar, applyDamageWear, spinWheels } from './CarFactory.js';
+import { createCar, disposeCar, applyDamageWear, spinWheels, attachCarHeadlights } from './CarFactory.js';
 import { CarPhysics } from './CarPhysics.js';
 import { TrackBuilder } from './TrackBuilder.js';
 import { applyTrackEnvironment } from './TrackEnvironment.js';
@@ -47,6 +47,14 @@ export class RaceSession {
     const def = getCarDef(carModelId);
     session.car = await createCar(carModelId, def.defaultColor, { preserveTextures: true });
     engine.scene.add(session.car);
+    if (trackDef.atmosphere === 'black-hole') {
+      attachCarHeadlights(session.car, {
+        color: 0xd8e6ff,
+        intensity: 7,
+        distance: 72,
+        tailColor: 0xb02030,
+      });
+    }
     session.boostVfx = new BoostVfx(session.car, def.defaultColor);
     if (!options.theaterMode) await session._initTraffic();
     session.damageVfx = new DamageVfx(session.car);
@@ -102,6 +110,9 @@ export class RaceSession {
     this._damageShakeTime = 0;
     this._damageShakeStrength = 0;
     this._autopilot = this.theaterMode ? new AutopilotDriver(trackDef) : null;
+    if (this._autopilot) {
+      this._autopilot.onDirectionChange = () => this._tireTrail?.clear();
+    }
     this._tireTrail = null;
     this._cameraCycleTimer = 0;
     this._cameraCycleInterval = 14;
@@ -150,6 +161,8 @@ export class RaceSession {
     this._autopilot?.start();
     if (!this._tireTrail) {
       this._tireTrail = new TireTrail(this.engine.scene);
+    } else {
+      this._tireTrail.clear();
     }
   }
 

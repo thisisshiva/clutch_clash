@@ -214,6 +214,7 @@ export async function createCar(carModelId, color, { copyPaint = false, preserve
 
 /** Dispose a car instance. Set keepAssets when the mesh shares cached materials. */
 export function disposeCar(car, { keepAssets = false } = {}) {
+  detachCarHeadlights(car);
   car.parent?.remove(car);
   if (keepAssets) return;
   car.traverse((child) => {
@@ -222,4 +223,153 @@ export function disposeCar(car, { keepAssets = false } = {}) {
       for (const mat of mats) mat.dispose?.();
     }
   });
+}
+
+/**
+ * Soft falloff texture for volumetric headlight cones.
+ */
+function makeBeamFalloffTexture() {
+  const size = 128;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const g = ctx.createLinearGradient(0, 0, 0, size);
+  g.addColorStop(0, 'rgba(255,255,255,0)');
+  g.addColorStop(0.12, 'rgba(255,255,255,0.55)');
+  g.addColorStop(0.55, 'rgba(255,255,255,0.22)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, size, size);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+/**
+ * Night-driving lights for dark atmospheres (Black Hole):
+ * cool soft headlights ahead, muted crimson taillights behind.
+ */
+export function attachCarHeadlights(car, {
+  color = 0xd8e6ff,
+  intensity = 7,
+  distance = 72,
+  tailColor = 0xb02030,
+} = {}) {
+  detachCarHeadlights(car);
+
+  const box = localBoundingBox(car);
+  const frontZ = box.max.z;
+  const rearZ = box.min.z;
+  const halfW = Math.max(0.45, Math.min(0.95, (box.max.x - box.min.x) * 0.28));
+  const lampY = THREE.MathUtils.clamp(box.min.y + (box.max.y - box.min.y) * 0.28, 0.35, 0.85);
+  const frontLampZ = frontZ - 0.08;
+  const rearLampZ = rearZ + 0.08;
+
+  const group = new THREE.Group();
+  group.name = 'car-lights';
+
+  const lampMat = new THREE.MeshStandardMaterial({
+    color: 0xf4f8ff,
+    emissive: new THREE.Color(color),
+    emissiveIntensity: 2.4,
+    roughness: 0.25,
+    metalness: 0.05,
+  });
+  const tailMat = new THREE.MeshStandardMaterial({
+    color: 0x881018,
+    emissive: new THREE.Color(tailColor),
+    emissiveIntensity: 1.8,
+    roughness: 0.4,
+    metalness: 0.05,
+  });
+  const lampGeo = new THREE.SphereGeometry(0.06, 10, 8);
+  const tailGeo = new THREE.BoxGeometry(0.2, 0.08, 0.05);
+  const beamMat = new THREE.MeshBasicMaterial({
+    map: makeBeamFalloffTexture(),
+    color,
+    transparent: true,
+    opacity: 0.07,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+  });
+
+  const up = new THREE.Vector3(0, 1, 0);
+  const beamDir = new THREE.Vector3();
+  const beamFrom = new THREE.Vector3();
+  const beamTo = new THREE.Vector3();
+  const quat = new THREE.Quaternion();
+
+  for (const side of [-1, 1]) {
+    const lx = side * halfW;
+    const lamp = new THREE.Mesh(lampGeo, lampMat);
+    lamp.position.set(lx, lampY, frontLampZ);
+    group.add(lamp);
+
+    beamFrom.set(lx * 0.85, lampY + 0.02, frontLampZ);
+    beamTo.set(lx * 0.25, 0.02, frontLampZ + 28);
+    beamDir.subVectors(beamTo, beamFrom).normalize();
+
+    const beam = new THREE.SpotLight(color, intensity, distance, Math.PI / 6.2, 0.65, 1.15);
+    beam.position.copy(beamFrom);
+    beam.target.position.copy(beamTo);
+    beam.castShadow = false;
+    group.add(beam);
+    group.add(beam.target);
+
+    const coneLen = 18;
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(2.2, coneLen, 20, 1, true), beamMat);
+    quat.setFromUnitVectors(up, beamDir.clone().negate());
+    cone.quaternion.copy(quat);
+    cone.position.copy(beamFrom).addScaledVector(beamDir, coneLen * 0.5);
+    group.add(cone);
+
+    const tail = new THREE.Mesh(tailGeo, tailMat);
+    tail.position.set(side * halfW * 0.95, lampY + 0.05, rearLampZ);
+    group.add(tail);
+
+    const tailLight = new THREE.PointLight(tailColor, 0.55, 4.5, 2.2);
+    tailLight.position.set(side * halfW * 0.9, lampY, rearLampZ - 0.1);
+    group.add(tailLight);
+  }
+
+  const brake = new THREE.Mesh(
+    new THREE.BoxGeometry(halfW * 1.05, 0.05, 0.04),
+    tailMat,
+  );
+  brake.position.set(0, lampY + 0.32, rearLampZ);
+  group.add(brake);
+
+  car.add(group);
+  car.userData.headlights = group;
+  return group;
+}
+
+/** Axis-aligned bounds of `root` in its local space. */
+function localBoundingBox(root) {
+  root.updateWorldMatrix(true, true);
+  const inv = new THREE.Matrix4().copy(root.matrixWorld).invert();
+  const box = new THREE.Box3();
+  const temp = new THREE.Box3();
+  root.traverse((child) => {
+    if (!child.isMesh || !child.geometry) return;
+    if (!child.geometry.boundingBox) child.geometry.computeBoundingBox();
+    temp.copy(child.geometry.boundingBox).applyMatrix4(child.matrixWorld).applyMatrix4(inv);
+    box.union(temp);
+  });
+  if (box.isEmpty()) box.set(new THREE.Vector3(-1, 0, -2), new THREE.Vector3(1, 1.2, 2));
+  return box;
+}
+
+export function detachCarHeadlights(car) {
+  const group = car?.userData?.headlights;
+  if (!group) return;
+  group.traverse((child) => {
+    if (child.isLight) return;
+    child.geometry?.dispose?.();
+    const mats = Array.isArray(child.material) ? child.material : [child.material];
+    for (const mat of mats) mat?.dispose?.();
+  });
+  group.parent?.remove(group);
+  car.userData.headlights = null;
 }

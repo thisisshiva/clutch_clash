@@ -1,7 +1,9 @@
 import * as THREE from 'three';
+import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { buildTrackAtmosphere } from './TrackAtmosphere.js';
 import { performanceTier } from './PerformanceConfig.js';
 import { makeNorthPathWordmarkTexture } from './TrackNorthPathScenery.js';
+import { curveFrameAt, openCurveTRange } from './spline.js';
 
 /**
  * Factory - turns a track definition (spline control points + checkpoints)
@@ -38,16 +40,20 @@ export class TrackBuilder {
     const positions = [];
     const uvs = [];
     const indices = [];
+    const closed = def.closed !== false;
+    const runout = closed ? null : openCurveTRange(def.length || 8000, 140);
     const frames = [];
     for (let i = 0; i <= segments; i++) {
-      const t = i / segments;
-      const p = this.curve.getPointAt(t);
-      const tan = this.curve.getTangentAt(t);
-      const normal = new THREE.Vector3(tan.z, 0, -tan.x).normalize();
+      const t = closed
+        ? i / segments
+        : runout.start + (i / segments) * (runout.end - runout.start);
+      const { point: p, tangent: tan, normal } = curveFrameAt(
+        this.curve, t, closed, def.length || 8000,
+      );
       frames.push({ p, normal, tangent: tan.clone().normalize() });
       positions.push(
         p.x + normal.x * halfW, 0.01, p.z + normal.z * halfW,
-        p.x - normal.x * halfW, 0.01, p.z - normal.z * halfW
+        p.x - normal.x * halfW, 0.01, p.z - normal.z * halfW,
       );
       uvs.push(0, t * 60, 1, t * 60);
       if (i < segments) {
@@ -55,24 +61,45 @@ export class TrackBuilder {
         indices.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
       }
     }
-    const roadGeo = new THREE.BufferGeometry();
-    roadGeo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    roadGeo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-    roadGeo.setIndex(indices);
-    roadGeo.computeVertexNormals();
     const isWet = def.atmosphere === 'rain-evening';
+    const isCoastal = def.atmosphere === 'chapmans-peak';
+    const isVoid = def.atmosphere === 'black-hole';
+    const isEndless = def.atmosphere === 'endless-desert';
     const isCauseway = def.atmosphere === 'rann-heaven' || def.atmosphere === 'snow-heaven'
-      || def.noBarriers;
+      || isEndless
+      || (def.noBarriers && !isCoastal && !isVoid);
     const isSnow = def.atmosphere === 'snow-heaven';
+    const roadGeoRaw = new THREE.BufferGeometry();
+    roadGeoRaw.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    roadGeoRaw.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    roadGeoRaw.setIndex(indices);
+    roadGeoRaw.computeVertexNormals();
+    const roadGeo = isCoastal || isVoid ? mergeVertices(roadGeoRaw, 0.08) : roadGeoRaw;
+    if (isCoastal || isVoid) roadGeo.computeVertexNormals();
     const road = new THREE.Mesh(
       roadGeo,
       new THREE.MeshStandardMaterial({
-        map: isSnow ? makeSnowyRoadTexture() : isCauseway ? makeDustyRoadTexture() : null,
-        color: isWet ? 0x3a3e48 : isSnow ? 0xffffff : isCauseway ? 0xffffff : 0x5a5a64,
-        roughness: isWet ? 0.35 : isSnow ? 0.92 : isCauseway ? 0.97 : 0.88,
-        metalness: isWet ? 0.12 : isSnow ? 0.02 : 0,
+        map: isSnow ? makeSnowyRoadTexture()
+          : isCoastal ? makeCoastalRoadTexture()
+          : isVoid ? makeVoidRoadTexture()
+          : isCauseway ? makeDustyRoadTexture()
+          : null,
+        color: isWet ? 0x3a3e48
+          : isSnow ? 0xffffff
+          : isVoid ? 0xffffff
+          : isCauseway ? 0xffffff
+          : isCoastal ? 0xffffff
+          : 0x5a5a64,
+        roughness: isWet ? 0.35 : isSnow ? 0.92 : isVoid ? 0.55 : isCoastal ? 0.82 : isCauseway ? 0.97 : 0.88,
+        metalness: isWet ? 0.12 : isVoid ? 0.22 : isSnow ? 0.02 : 0,
+        emissive: isVoid ? 0x0a0814 : 0x000000,
+        emissiveIntensity: isVoid ? 0.08 : 0,
+        flatShading: false,
       })
     );
+    if (isCoastal) {
+      this._addCoastalShoulder(frames, halfW);
+    }
     road.receiveShadow = true;
     this.group.add(road);
 
@@ -81,12 +108,14 @@ export class TrackBuilder {
 
     this._addRoadStripes(frames, halfW, def.laneCount || 1);
 
-    if (!isCauseway) {
+    if (!isCauseway && !isVoid) {
       this._addBarrierPosts(frames, halfW, segments, def);
     }
 
     const startColor = this.def.id === 'north-path'
       ? 0xc62828
+      : isVoid ? 0xa0b0e0
+      : isEndless ? 0xe8c878
       : isSnow ? 0xb8d4ff : isCauseway ? 0xf0f4ff : 0xff2244;
     if (this.showGates) {
       this._addGate(this.def.checkpoints[0], startColor, true);
@@ -168,6 +197,47 @@ export class TrackBuilder {
     this.group.add(shoulders);
   }
 
+  /** Narrow ledge flush with the road so the stone wall sits on solid ground. */
+  _addCoastalShoulder(frames, halfW) {
+    const positions = [];
+    const uvs = [];
+    const indices = [];
+    const shoulderWidth = 1.5;
+    const vScale = (this.def.length || 8000) / 5;
+    const side = -1; // ocean side (right of travel)
+    const inner = halfW + 0.06;
+
+    frames.forEach(({ p, normal }, i) => {
+      for (const offset of [inner, inner + shoulderWidth]) {
+        positions.push(
+          p.x + normal.x * offset * side,
+          0.012,
+          p.z + normal.z * offset * side,
+        );
+      }
+      const v = (i / frames.length) * vScale;
+      uvs.push(0, v, 1, v);
+    });
+
+    for (let i = 0; i < frames.length - 1; i++) {
+      const a = i * 2;
+      indices.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    const shoulder = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
+      color: 0xa88868,
+      roughness: 0.96,
+    }));
+    shoulder.receiveShadow = true;
+    shoulder.name = 'chapmans-ocean-shoulder';
+    this.group.add(shoulder);
+  }
+
   /** Soft snow drifts and drop patches sitting on the asphalt. */
   _addRoadSnowDrops(frames, halfW) {
     const patchCount = {
@@ -228,11 +298,17 @@ export class TrackBuilder {
     const isCausewayStart = isStart && (
       this.def.id === 'road-to-heaven'
       || this.def.id === 'road-to-heaven-snow'
+      || this.def.id === 'chapmans-peak'
+      || this.def.id === 'black-hole'
+      || this.def.id === 'road-to-endless'
       || isNorthPath
     );
-    const gateLabel = this.def.id === 'road-to-heaven-snow'
-      ? 'FROZEN HEAVEN'
-      : 'ROAD TO HEAVEN';
+    const gateLabel = {
+      'road-to-heaven-snow': 'FROZEN HEAVEN',
+      'chapmans-peak': "CHAPMAN'S PEAK",
+      'black-hole': 'BLACK HOLE',
+      'road-to-endless': 'ROAD TO ENDLESS',
+    }[this.def.id] ?? 'ROAD TO HEAVEN';
     const [px, , pz] = checkpoint.position;
     const [tx, tz] = checkpoint.tangent;
     const rotY = Math.atan2(tx, tz);
@@ -616,6 +692,92 @@ function makeSnowyRoadTexture() {
     }
     ctx.stroke();
   }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(1, 2);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 4;
+  return texture;
+}
+
+/** Obsidian asphalt with faint magenta/cyan edge glow for the void run. */
+function makeVoidRoadTexture() {
+  const size = 512;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d');
+
+  ctx.fillStyle = '#121018';
+  ctx.fillRect(0, 0, size, size);
+
+  for (let i = 0; i < 2200; i++) {
+    const tone = 18 + Math.floor(Math.random() * 28);
+    ctx.fillStyle = `rgba(${tone}, ${tone - 2}, ${tone + 8}, ${0.06 + Math.random() * 0.12})`;
+    ctx.fillRect(Math.random() * size, Math.random() * size, 0.5 + Math.random() * 2, 0.5 + Math.random() * 2);
+  }
+
+  const left = ctx.createLinearGradient(0, 0, size * 0.14, 0);
+  left.addColorStop(0, 'rgba(120, 100, 180, 0.22)');
+  left.addColorStop(1, 'rgba(120, 100, 180, 0)');
+  ctx.fillStyle = left;
+  ctx.fillRect(0, 0, size * 0.14, size);
+
+  const right = ctx.createLinearGradient(size, 0, size * 0.86, 0);
+  right.addColorStop(0, 'rgba(70, 110, 180, 0.18)');
+  right.addColorStop(1, 'rgba(70, 110, 180, 0)');
+  ctx.fillStyle = right;
+  ctx.fillRect(size * 0.86, 0, size * 0.14, size);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.ClampToEdgeWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(1, 28);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 4;
+  return texture;
+}
+
+/** Dark coastal asphalt with sandy grit blown in along the edges. */
+function makeCoastalRoadTexture() {
+  const size = 512;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d');
+
+  ctx.fillStyle = '#43464d';
+  ctx.fillRect(0, 0, size, size);
+
+  for (let i = 0; i < 2600; i++) {
+    const tone = 56 + Math.floor(Math.random() * 42);
+    ctx.fillStyle = `rgba(${tone}, ${tone + 2}, ${tone + 6}, ${0.05 + Math.random() * 0.12})`;
+    const radius = 0.5 + Math.random() * 2.2;
+    ctx.fillRect(Math.random() * size, Math.random() * size, radius, radius);
+  }
+
+  // Faded tar repair seams.
+  for (let i = 0; i < 18; i++) {
+    ctx.strokeStyle = `rgba(28, 30, 34, ${0.08 + Math.random() * 0.12})`;
+    ctx.lineWidth = 1.5 + Math.random() * 3.5;
+    ctx.beginPath();
+    let x = Math.random() * size;
+    ctx.moveTo(x, 0);
+    for (let y = 0; y <= size; y += 40) {
+      x += (Math.random() - 0.5) * 40;
+      ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+
+  // Warm sandy dust bleeding in from both road edges.
+  const edgeDust = ctx.createLinearGradient(0, 0, size, 0);
+  edgeDust.addColorStop(0, 'rgba(190, 156, 104, 0.26)');
+  edgeDust.addColorStop(0.14, 'rgba(150, 128, 96, 0.06)');
+  edgeDust.addColorStop(0.5, 'rgba(0, 0, 0, 0)');
+  edgeDust.addColorStop(0.86, 'rgba(150, 128, 96, 0.06)');
+  edgeDust.addColorStop(1, 'rgba(190, 156, 104, 0.26)');
+  ctx.fillStyle = edgeDust;
+  ctx.fillRect(0, 0, size, size);
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping;

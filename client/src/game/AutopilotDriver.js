@@ -11,12 +11,14 @@ export class AutopilotDriver {
     this.speed = 0;
     this.active = false;
     this.cruiseSpeed = 38;
+    this.direction = 1;
   }
 
   start() {
     this.active = true;
     this.t = this.trackDef.startT ?? (this.trackDef.closed === false ? 0.01 : 0);
     this.speed = 0;
+    this.direction = 1;
   }
 
   stop() {
@@ -34,17 +36,26 @@ export class AutopilotDriver {
       this.speed = Math.min(this.cruiseSpeed, this.speed + accel * dt);
     }
 
-    this.t += (this.speed * dt) / Math.max(track.length, 1);
+    this.t += ((this.speed * dt) / Math.max(track.length, 1)) * this.direction;
     if (closed) {
       this.t = ((this.t % 1) + 1) % 1;
-    } else if (this.t >= 0.995) {
-      this.t = track.startT ?? 0.01;
-      this.speed *= 0.55;
+    } else {
+      const startT = track.startT ?? 0.01;
+      const endT = 0.985;
+      if (this.t >= endT) {
+        this.t = endT;
+        if (this.direction !== -1) this.onDirectionChange?.(-1);
+        this.direction = -1;
+      } else if (this.t <= startT) {
+        this.t = startT;
+        if (this.direction !== 1) this.onDirectionChange?.(1);
+        this.direction = 1;
+      }
     }
 
     const pos = splinePoint(track.controlPoints, this.t, closed);
     const [tx, tz] = splineTangent(track.controlPoints, this.t, closed);
-    const heading = Math.atan2(tx, tz);
+    const heading = Math.atan2(tx * this.direction, tz * this.direction);
     const nx = tz;
     const nz = -tx;
 

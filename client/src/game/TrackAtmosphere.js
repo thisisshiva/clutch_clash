@@ -3,6 +3,9 @@ import { performanceConfig, scaleTreeCount } from './PerformanceConfig.js';
 import { buildRannHeavenScenery } from './TrackRannScenery.js';
 import { buildSnowHeavenScenery } from './TrackSnowHeavenScenery.js';
 import { addNorthPathBrandMonument } from './TrackNorthPathScenery.js';
+import { buildChapmansPeakScenery } from './TrackChapmansPeakScenery.js';
+import { buildBlackHoleScenery } from './TrackBlackHoleScenery.js';
+import { buildEndlessScenery } from './TrackEndlessScenery.js';
 
 const _point = new THREE.Vector3();
 const _tangent = new THREE.Vector3();
@@ -283,6 +286,24 @@ export function buildTrackAtmosphere(curve, trackDef) {
     group.add(buildSnowHeavenScenery(curve, trackDef, rng));
     if (!trackDef.theaterMode) {
       addBillboard(group, curve, halfW, 0.42, 1, 'FROZEN HEAVEN', 80);
+    }
+    return group;
+  }
+
+  if (trackDef.id === 'chapmans-peak') {
+    group.add(buildChapmansPeakScenery(curve, trackDef, rng));
+    return group;
+  }
+
+  if (trackDef.id === 'black-hole') {
+    group.add(buildBlackHoleScenery(curve, trackDef, rng));
+    return group;
+  }
+
+  if (trackDef.id === 'road-to-endless') {
+    group.add(buildEndlessScenery(curve, trackDef, rng));
+    if (!trackDef.theaterMode) {
+      addBillboard(group, curve, halfW, 0.35, 1, 'ROAD TO ENDLESS', 28);
     }
     return group;
   }

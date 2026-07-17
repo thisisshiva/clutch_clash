@@ -10,9 +10,12 @@ const FADE_TIME = 4.2;
 const trailMaterial = new THREE.ShaderMaterial({
   transparent: true,
   depthWrite: false,
+  polygonOffset: true,
+  polygonOffsetFactor: -1,
+  polygonOffsetUnits: -1,
   side: THREE.DoubleSide,
   uniforms: {
-    uColor: { value: new THREE.Color(0xb8c4d0) },
+    uColor: { value: new THREE.Color(0xc8d0d8) },
   },
   vertexShader: /* glsl */ `
     attribute float aAlpha;
@@ -126,12 +129,14 @@ export class TireTrail {
     this._addPoint(this.left, {
       x: position.x - rightX * WHEEL_HALF,
       z: position.z - rightZ * WHEEL_HALF,
+      y: position.y,
       hx: rightX,
       hz: rightZ,
     });
     this._addPoint(this.right, {
       x: position.x + rightX * WHEEL_HALF,
       z: position.z + rightZ * WHEEL_HALF,
+      y: position.y,
       hx: rightX,
       hz: rightZ,
     });
@@ -158,17 +163,17 @@ export class TireTrail {
     for (let i = 0; i < n; i++) {
       const p = pts[i];
       const fade = Math.max(0, 1 - p.age / FADE_TIME);
-      const tipFade = Math.min(1, (i / (n - 1)) * 2.5);
-      // Soft pale line — low peak alpha so it never reads as a heavy skid.
-      const a = fade * fade * tipFade * 0.2;
+      const tipFade = Math.min(1, (i / (n - 1)) * 2.2);
+      const a = fade * fade * tipFade * 0.12;
 
+      const y = (p.y ?? 0) + 0.03;
       positions[vi++] = p.x - p.hx * halfW;
-      positions[vi++] = 0.028;
+      positions[vi++] = y;
       positions[vi++] = p.z - p.hz * halfW;
       alphas[ai++] = a;
 
       positions[vi++] = p.x + p.hx * halfW;
-      positions[vi++] = 0.028;
+      positions[vi++] = y;
       positions[vi++] = p.z + p.hz * halfW;
       alphas[ai++] = a;
     }
@@ -176,6 +181,16 @@ export class TireTrail {
     track.mesh.geometry.attributes.position.needsUpdate = true;
     track.mesh.geometry.attributes.aAlpha.needsUpdate = true;
     track.mesh.geometry.setDrawRange(0, (n - 1) * 6);
+  }
+
+  clear() {
+    for (const track of [this.left, this.right]) {
+      track.points.length = 0;
+      track.mesh.geometry.setDrawRange(0, 0);
+    }
+    this._accum = 0;
+    this._lastX = null;
+    this._lastZ = null;
   }
 
   dispose() {

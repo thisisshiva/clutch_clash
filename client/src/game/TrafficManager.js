@@ -49,10 +49,22 @@ export class AbstractTrafficVehicle {
     };
   }
 
-  update(dt, curve, trackLength) {
+  update(dt, curve, trackDef) {
+    const trackLength = trackDef.length || 1200;
+    const closed = trackDef.closed !== false;
     this.t += (this.speed * dt / trackLength) * this.direction;
-    if (this.t >= 1) this.t -= 1;
-    if (this.t < 0) this.t += 1;
+    if (closed) {
+      if (this.t >= 1) this.t -= 1;
+      if (this.t < 0) this.t += 1;
+    } else {
+      if (this.t >= 1) {
+        this.t = 1;
+        this.direction = -1;
+      } else if (this.t <= 0) {
+        this.t = 0;
+        this.direction = 1;
+      }
+    }
   }
 
   applyTransform(curve, trackDef) {
@@ -154,6 +166,9 @@ export class TrafficManager {
       trackDef.id === 'road-to-heaven'
       || trackDef.id === 'road-to-heaven-snow'
       || trackDef.id === 'north-path'
+      || trackDef.id === 'chapmans-peak'
+      || trackDef.id === 'black-hole'
+      || trackDef.id === 'road-to-endless'
     ) return true;
     return trackDef.id === 'mega-straight' && (trackDef.laneCount || 1) > 1;
   }
@@ -163,6 +178,9 @@ export class TrafficManager {
       trackDef.id === 'road-to-heaven'
       || trackDef.id === 'road-to-heaven-snow'
       || trackDef.id === 'north-path'
+      || trackDef.id === 'chapmans-peak'
+      || trackDef.id === 'black-hole'
+      || trackDef.id === 'road-to-endless'
     ) {
       return Math.min(trackDef.trafficCount ?? 8, performanceConfig.trafficMeshes);
     }
@@ -298,7 +316,7 @@ export class TrafficManager {
   update(dt) {
     const curve = this.track.curve;
     for (const vehicle of this.vehicles) {
-      vehicle.update(dt, curve, this._trackLength);
+      vehicle.update(dt, curve, this.trackDef);
     }
     this._assignVisibleMeshes();
     for (const vehicle of this.vehicles) {

@@ -58,6 +58,59 @@ const ROAD_TO_HEAVEN_CONTROL_POINTS = [
   [0, 0, 5000],
 ];
 
+/**
+ * ~7.8 km winding cliff road hugging a coastline (Chapman's Peak Drive).
+ * Travel heads +z, so the right of travel (ocean side) is the -normal side.
+ */
+const CHAPMANS_PEAK_CONTROL_POINTS = [
+  [0, 0, -3600],
+  [150, 0, -3050],
+  [-50, 0, -2450],
+  [190, 0, -1850],
+  [-30, 0, -1300],
+  [230, 0, -750],
+  [40, 0, -200],
+  [270, 0, 350],
+  [80, 0, 900],
+  [310, 0, 1450],
+  [130, 0, 2000],
+  [350, 0, 2600],
+  [170, 0, 3200],
+  [380, 0, 3800],
+];
+
+/**
+ * ~8 km spiral approach into a cosmic void — tightening arcs toward the
+ * event horizon at the far end of the run.
+ */
+const BLACK_HOLE_CONTROL_POINTS = (() => {
+  const pts = [];
+  for (let i = 0; i < 16; i++) {
+    const t = i / 15;
+    const angle = t * Math.PI * 2.4;
+    const radius = 920 - t * 620;
+    pts.push([
+      Math.round(Math.sin(angle) * radius),
+      0,
+      Math.round(-3800 + t * 7600 + Math.cos(angle) * radius * 0.35),
+    ]);
+  }
+  return pts;
+})();
+
+/** ~12 km vanishing-point highway — long straights with soft desert drift. */
+const ROAD_TO_ENDLESS_CONTROL_POINTS = [
+  [0, 0, -6000],
+  [40, 0, -4500],
+  [-20, 0, -3000],
+  [60, 0, -1500],
+  [-10, 0, 0],
+  [50, 0, 1500],
+  [-30, 0, 3000],
+  [40, 0, 4500],
+  [0, 0, 6000],
+];
+
 const TRACK_DEFS = [
   {
     id: 'sprint',
@@ -131,6 +184,21 @@ const TRACK_DEFS = [
     controlPoints: ROAD_TO_HEAVEN_CONTROL_POINTS,
   },
   {
+    id: 'chapmans-peak',
+    name: "Chapman's Peak Drive",
+    description: 'Golden-hour cliff road — sheer rock on one side, the Atlantic on the other',
+    atmosphere: 'chapmans-peak',
+    closed: false,
+    startT: 0.01,
+    checkpointCount: 6,
+    laps: 1,
+    laneCount: 2,
+    roadWidth: 13,
+    trafficCount: 8,
+    noBarriers: true,
+    controlPoints: CHAPMANS_PEAK_CONTROL_POINTS,
+  },
+  {
     id: 'north-path',
     name: 'Come to Canada',
     description: 'Frozen Heaven skies — GetNorthPath brand run along the causeway',
@@ -144,6 +212,36 @@ const TRACK_DEFS = [
     trafficCount: 8,
     noBarriers: true,
     controlPoints: ROAD_TO_HEAVEN_CONTROL_POINTS,
+  },
+  {
+    id: 'black-hole',
+    name: 'Black Hole',
+    description: 'Spiral into the void — neon road, accretion glow, event horizon ahead',
+    atmosphere: 'black-hole',
+    closed: false,
+    startT: 0.01,
+    checkpointCount: 7,
+    laps: 1,
+    laneCount: 2,
+    roadWidth: 14,
+    trafficCount: 6,
+    noBarriers: true,
+    controlPoints: BLACK_HOLE_CONTROL_POINTS,
+  },
+  {
+    id: 'road-to-endless',
+    name: 'Road to Endless',
+    description: 'Vanishing-point highway through infinite desert — the horizon never arrives',
+    atmosphere: 'endless-desert',
+    closed: false,
+    startT: 0.01,
+    checkpointCount: 8,
+    laps: 1,
+    laneCount: 2,
+    roadWidth: 14,
+    trafficCount: 10,
+    noBarriers: true,
+    controlPoints: ROAD_TO_ENDLESS_CONTROL_POINTS,
   },
 ];
 

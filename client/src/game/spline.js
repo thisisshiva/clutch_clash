@@ -1,4 +1,5 @@
 /** Client-side Catmull-Rom helpers (matches server tracks.js). */
+import * as THREE from 'three';
 
 export function splinePoint(points, t, closed = true) {
   const n = points.length;
@@ -116,4 +117,43 @@ export function trackBoundsFromPoints(points, padding = 20) {
     maxZ = Math.max(maxZ, p.z);
   }
   return { minX: minX - padding, maxX: maxX + padding, minZ: minZ - padding, maxZ: maxZ + padding };
+}
+
+const _curvePoint = new THREE.Vector3();
+const _curveTangent = new THREE.Vector3();
+const _curveNormal = new THREE.Vector3();
+
+/**
+ * Point + frame on a THREE CatmullRomCurve3. Open curves extrapolate linearly
+ * beyond t∈[0,1] so road/scenery ribbons can extend past the nominal endpoints.
+ */
+export function curveFrameAt(curve, t, closed = true, trackLength = 8000) {
+  if (closed) {
+    const ct = (((t % 1) + 1) % 1);
+    curve.getPointAt(ct, _curvePoint);
+    curve.getTangentAt(ct, _curveTangent).normalize();
+  } else if (t < 0) {
+    curve.getPointAt(0, _curvePoint);
+    curve.getTangentAt(0, _curveTangent).normalize();
+    _curvePoint.addScaledVector(_curveTangent, t * trackLength);
+  } else if (t > 1) {
+    curve.getPointAt(1, _curvePoint);
+    curve.getTangentAt(1, _curveTangent).normalize();
+    _curvePoint.addScaledVector(_curveTangent, (t - 1) * trackLength);
+  } else {
+    curve.getPointAt(t, _curvePoint);
+    curve.getTangentAt(t, _curveTangent).normalize();
+  }
+  _curveNormal.set(_curveTangent.z, 0, -_curveTangent.x).normalize();
+  return {
+    point: _curvePoint,
+    tangent: _curveTangent,
+    normal: _curveNormal,
+  };
+}
+
+/** t range [0,1] extended by runoutMeters on open curves. */
+export function openCurveTRange(trackLength, runoutMeters = 120) {
+  const runoutT = runoutMeters / Math.max(trackLength, 1);
+  return { start: -runoutT, end: 1 + runoutT };
 }
