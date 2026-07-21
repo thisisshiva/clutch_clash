@@ -103,9 +103,15 @@ export class Engine {
   _frame() {
     const dt = Math.min(this._clock.getDelta(), 1 / 20);
     for (const fn of this._updateCallbacks) fn(dt);
-    this.renderer.render(this.scene, this.camera);
+    if (this._overrideRender) this._overrideRender(this.renderer, this);
+    else this.renderer.render(this.scene, this.camera);
     // Capture immediately after present so MediaRecorder never sees a cleared buffer.
     this._afterRender?.();
+  }
+
+  /** When set, replaces the default scene/camera WebGL present (used by 2D roads). */
+  setOverrideRender(fn) {
+    this._overrideRender = typeof fn === 'function' ? fn : null;
   }
 
   /** Optional hook run after each WebGL present (used by TheaterRecorder). */

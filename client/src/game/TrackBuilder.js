@@ -65,10 +65,16 @@ export class TrackBuilder {
     const isCoastal = def.atmosphere === 'chapmans-peak';
     const isVoid = def.atmosphere === 'black-hole';
     const isEndless = def.atmosphere === 'endless-desert';
+    const isFuji = def.atmosphere === 'mt-fuji-dawn'
+      || def.atmosphere === 'mt-fuji-day'
+      || def.atmosphere === 'mt-fuji-night'
+      || def.atmosphere === 'mt-fuji-autumn';
+    const is2d = def.kind === '2d' || def.atmosphere === 'city-2d-night';
     const isCauseway = def.atmosphere === 'rann-heaven' || def.atmosphere === 'snow-heaven'
       || isEndless
-      || (def.noBarriers && !isCoastal && !isVoid);
-    const isSnow = def.atmosphere === 'snow-heaven';
+      || isFuji
+      || (def.noBarriers && !isCoastal && !isVoid && !is2d);
+    const isSnow = def.atmosphere === 'snow-heaven' || def.atmosphere === 'mt-fuji-night';
     const roadGeoRaw = new THREE.BufferGeometry();
     roadGeoRaw.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     roadGeoRaw.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
@@ -87,13 +93,14 @@ export class TrackBuilder {
         color: isWet ? 0x3a3e48
           : isSnow ? 0xffffff
           : isVoid ? 0xffffff
+          : is2d ? 0x3a3e48
           : isCauseway ? 0xffffff
           : isCoastal ? 0xffffff
           : 0x5a5a64,
-        roughness: isWet ? 0.35 : isSnow ? 0.92 : isVoid ? 0.55 : isCoastal ? 0.82 : isCauseway ? 0.97 : 0.88,
-        metalness: isWet ? 0.12 : isVoid ? 0.22 : isSnow ? 0.02 : 0,
-        emissive: isVoid ? 0x0a0814 : 0x000000,
-        emissiveIntensity: isVoid ? 0.08 : 0,
+        roughness: isWet ? 0.35 : isSnow ? 0.92 : isVoid ? 0.55 : is2d ? 0.72 : isCoastal ? 0.82 : isCauseway ? 0.97 : 0.88,
+        metalness: isWet ? 0.12 : isVoid ? 0.22 : is2d ? 0.08 : isSnow ? 0.02 : 0,
+        emissive: isVoid ? 0x0a0814 : is2d ? 0x08060c : 0x000000,
+        emissiveIntensity: isVoid ? 0.08 : is2d ? 0.04 : 0,
         flatShading: false,
       })
     );
@@ -108,7 +115,7 @@ export class TrackBuilder {
 
     this._addRoadStripes(frames, halfW, def.laneCount || 1);
 
-    if (!isCauseway && !isVoid) {
+    if (!isCauseway && !isVoid && !is2d) {
       this._addBarrierPosts(frames, halfW, segments, def);
     }
 
@@ -116,6 +123,7 @@ export class TrackBuilder {
       ? 0xc62828
       : isVoid ? 0xa0b0e0
       : isEndless ? 0xe8c878
+      : is2d ? 0xff66aa
       : isSnow ? 0xb8d4ff : isCauseway ? 0xf0f4ff : 0xff2244;
     if (this.showGates) {
       this._addGate(this.def.checkpoints[0], startColor, true);
@@ -301,6 +309,11 @@ export class TrackBuilder {
       || this.def.id === 'chapmans-peak'
       || this.def.id === 'black-hole'
       || this.def.id === 'road-to-endless'
+      || this.def.id === 'city-road-2d'
+      || this.def.id === 'mt-fuji-dawn'
+      || this.def.id === 'mt-fuji-day'
+      || this.def.id === 'mt-fuji-night'
+      || this.def.id === 'mt-fuji-autumn'
       || isNorthPath
     );
     const gateLabel = {
@@ -308,6 +321,11 @@ export class TrackBuilder {
       'chapmans-peak': "CHAPMAN'S PEAK",
       'black-hole': 'BLACK HOLE',
       'road-to-endless': 'ROAD TO ENDLESS',
+      'city-road-2d': 'CITY ROAD',
+      'mt-fuji-dawn': 'MT FUJI DAWN',
+      'mt-fuji-day': 'MT FUJI SAKURA',
+      'mt-fuji-night': 'MT FUJI NIGHT',
+      'mt-fuji-autumn': 'MT FUJI AUTUMN',
     }[this.def.id] ?? 'ROAD TO HEAVEN';
     const [px, , pz] = checkpoint.position;
     const [tx, tz] = checkpoint.tangent;

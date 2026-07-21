@@ -5,55 +5,100 @@ import path from 'node:path';
 const PROFILES = {
   shorts: {
     suffix: 'shorts',
-    // YouTube Shorts: vertical 9:16, crop sides to fill the screen.
+    durationSec: 60,
     filter:
       'scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,' +
       'crop=1080:1920,setsar=1,format=yuv420p',
+    // YouTube Shorts can stay higher quality.
+    video: {
+      preset: 'slow',
+      crf: '18',
+      profile: 'high',
+      level: '4.1',
+      bf: '2',
+      maxrate: '10M',
+      bufsize: '20M',
+    },
+    audio: { bitrate: '160k', rate: '48000' },
+  },
+  instagram: {
+    suffix: 'instagram',
+    durationSec: 60,
+    filter:
+      'scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,' +
+      'crop=1080:1920,setsar=1,format=yuv420p',
+    // IG Reels: keep under typical API limits (?25 Mbps video, ?128 kbps AAC).
+    video: {
+      preset: 'medium',
+      crf: '23',
+      profile: 'main',
+      level: '4.0',
+      bf: '0',
+      maxrate: '8M',
+      bufsize: '16M',
+    },
+    audio: { bitrate: '128k', rate: '44100' },
   },
   youtube: {
     suffix: 'youtube',
-    // Standard YouTube video: landscape 16:9.
     filter:
       'scale=1920:1080:force_original_aspect_ratio=decrease:flags=lanczos,' +
       'pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,setsar=1,format=yuv420p',
+    video: {
+      preset: 'slow',
+      crf: '17',
+      profile: 'high',
+      level: '4.1',
+      bf: '2',
+      maxrate: '12M',
+      bufsize: '24M',
+    },
+    audio: { bitrate: '192k', rate: '48000' },
   },
 };
 
 /**
  * Converts a WebM (or any ffmpeg-readable) file to high-quality H.264/AAC MP4.
- * Uses a slower preset / lower CRF — quality over speed.
- * @param {'shorts'|'youtube'} [profile]
+ * @param {'shorts'|'instagram'|'youtube'} [profile]
  * @returns {Promise<{ mp4Path: string, buffer: Buffer }>}
  */
 export function convertToMp4(inputPath, outputPath = mp4FileName(inputPath), profile = 'youtube') {
   const selected = PROFILES[profile] ?? PROFILES.youtube;
+  const video = selected.video;
+  const audio = selected.audio;
   return new Promise((resolve, reject) => {
     const args = [
       '-y',
       '-fflags', '+genpts',
       '-i', inputPath,
+    ];
+    if (selected.durationSec) {
+      args.push('-t', String(selected.durationSec));
+    }
+    args.push(
       '-vf', selected.filter,
       '-c:v', 'libx264',
-      '-preset', 'slow',
-      '-crf', '17',
-      '-profile:v', 'high',
-      '-level:v', '4.1',
+      '-preset', video.preset,
+      '-crf', video.crf,
+      '-profile:v', video.profile,
+      '-level:v', video.level,
       '-pix_fmt', 'yuv420p',
       '-g', '60',
       '-keyint_min', '60',
       '-sc_threshold', '0',
-      '-bf', '2',
+      '-bf', video.bf,
       '-fps_mode', 'cfr',
       '-r', '30',
-      '-maxrate', '12M',
-      '-bufsize', '24M',
+      '-maxrate', video.maxrate,
+      '-bufsize', video.bufsize,
       '-movflags', '+faststart',
       '-c:a', 'aac',
-      '-b:a', '192k',
-      '-ar', '48000',
+      '-b:a', audio.bitrate,
+      '-ar', audio.rate,
       '-ac', '2',
+      '-brand', 'mp42',
       outputPath,
-    ];
+    );
     const child = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] });
     let stderr = '';
     child.stderr.on('data', (chunk) => {

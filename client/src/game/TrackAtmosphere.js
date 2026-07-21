@@ -6,6 +6,12 @@ import { addNorthPathBrandMonument } from './TrackNorthPathScenery.js';
 import { buildChapmansPeakScenery } from './TrackChapmansPeakScenery.js';
 import { buildBlackHoleScenery } from './TrackBlackHoleScenery.js';
 import { buildEndlessScenery } from './TrackEndlessScenery.js';
+import {
+  buildMtFujiDawnScenery,
+  buildMtFujiDayScenery,
+  buildMtFujiNightScenery,
+  buildMtFujiAutumnScenery,
+} from './mt-fuji/index.js';
 
 const _point = new THREE.Vector3();
 const _tangent = new THREE.Vector3();
@@ -315,6 +321,26 @@ export function buildTrackAtmosphere(curve, trackDef) {
     addNorthPathBrandMonument(group, curve, halfW).catch((err) => {
       console.warn('North Path brand monument could not load.', err);
     });
+    return group;
+  }
+
+  if (trackDef.id === 'mt-fuji-dawn') {
+    group.add(buildMtFujiDawnScenery(curve, trackDef, rng));
+    return group;
+  }
+
+  if (trackDef.id === 'mt-fuji-day') {
+    group.add(buildMtFujiDayScenery(curve, trackDef, rng));
+    return group;
+  }
+
+  if (trackDef.id === 'mt-fuji-night') {
+    group.add(buildMtFujiNightScenery(curve, trackDef, rng));
+    return group;
+  }
+
+  if (trackDef.id === 'mt-fuji-autumn') {
+    group.add(buildMtFujiAutumnScenery(curve, trackDef, rng));
     return group;
   }
 

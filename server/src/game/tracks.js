@@ -59,6 +59,28 @@ const ROAD_TO_HEAVEN_CONTROL_POINTS = [
 ];
 
 /**
+ * ~8 km winding mountain approach toward Mt Fuji on the horizon.
+ * Shared layout for dawn / day / night theater variants.
+ */
+const MT_FUJI_CONTROL_POINTS = [
+  [0, 0, -3900],
+  [160, 0, -3350],
+  [-90, 0, -2800],
+  [210, 0, -2250],
+  [-40, 0, -1700],
+  [250, 0, -1150],
+  [60, 0, -600],
+  [290, 0, -50],
+  [110, 0, 500],
+  [320, 0, 1050],
+  [150, 0, 1600],
+  [340, 0, 2150],
+  [180, 0, 2700],
+  [300, 0, 3250],
+  [220, 0, 3800],
+];
+
+/**
  * ~7.8 km winding cliff road hugging a coastline (Chapman's Peak Drive).
  * Travel heads +z, so the right of travel (ocean side) is the -normal side.
  */
@@ -109,6 +131,26 @@ const ROAD_TO_ENDLESS_CONTROL_POINTS = [
   [-30, 0, 3000],
   [40, 0, 4500],
   [0, 0, 6000],
+];
+
+/**
+ * ~7.5 km urban arterial — gentle S-curves through a dense night city.
+ * Flat ribbon; scenery packs both sides with towers and neon.
+ */
+const CITY_ROAD_CONTROL_POINTS = [
+  [0, 0, -3600],
+  [90, 0, -3000],
+  [-70, 0, -2400],
+  [130, 0, -1800],
+  [-50, 0, -1200],
+  [110, 0, -600],
+  [20, 0, 0],
+  [150, 0, 600],
+  [-40, 0, 1200],
+  [120, 0, 1800],
+  [50, 0, 2400],
+  [170, 0, 3000],
+  [80, 0, 3600],
 ];
 
 const TRACK_DEFS = [
@@ -199,6 +241,66 @@ const TRACK_DEFS = [
     controlPoints: CHAPMANS_PEAK_CONTROL_POINTS,
   },
   {
+    id: 'mt-fuji-dawn',
+    name: 'Mt Fuji Dawn',
+    description: 'Anime sunrise — violet Fuji under gold-to-cyan skies',
+    atmosphere: 'mt-fuji-dawn',
+    closed: false,
+    startT: 0.01,
+    checkpointCount: 6,
+    laps: 1,
+    laneCount: 2,
+    roadWidth: 13,
+    trafficCount: 8,
+    noBarriers: true,
+    controlPoints: MT_FUJI_CONTROL_POINTS,
+  },
+  {
+    id: 'mt-fuji-day',
+    name: 'Mt Fuji Sakura',
+    description: 'Cherry blossom season — pink petals and clear anime blue',
+    atmosphere: 'mt-fuji-day',
+    closed: false,
+    startT: 0.01,
+    checkpointCount: 6,
+    laps: 1,
+    laneCount: 2,
+    roadWidth: 13,
+    trafficCount: 8,
+    noBarriers: true,
+    controlPoints: MT_FUJI_CONTROL_POINTS,
+  },
+  {
+    id: 'mt-fuji-night',
+    name: 'Mt Fuji Night',
+    description: 'Moonlit anime night — indigo sky, stars, snow hush',
+    atmosphere: 'mt-fuji-night',
+    closed: false,
+    startT: 0.01,
+    checkpointCount: 6,
+    laps: 1,
+    laneCount: 2,
+    roadWidth: 13,
+    trafficCount: 8,
+    noBarriers: true,
+    controlPoints: MT_FUJI_CONTROL_POINTS,
+  },
+  {
+    id: 'mt-fuji-autumn',
+    name: 'Mt Fuji Autumn',
+    description: 'Fall foliage run — crimson trees and warm painted skies',
+    atmosphere: 'mt-fuji-autumn',
+    closed: false,
+    startT: 0.01,
+    checkpointCount: 6,
+    laps: 1,
+    laneCount: 2,
+    roadWidth: 13,
+    trafficCount: 8,
+    noBarriers: true,
+    controlPoints: MT_FUJI_CONTROL_POINTS,
+  },
+  {
     id: 'north-path',
     name: 'Come to Canada',
     description: 'Frozen Heaven skies — GetNorthPath brand run along the causeway',
@@ -242,6 +344,38 @@ const TRACK_DEFS = [
     trafficCount: 10,
     noBarriers: true,
     controlPoints: ROAD_TO_ENDLESS_CONTROL_POINTS,
+  },
+  {
+    id: 'city-road-2d',
+    name: 'City Road',
+    description: 'Flat 2D night arterial — layered skyline cutouts and neon plates',
+    kind: '2d',
+    atmosphere: 'city-2d-night',
+    closed: false,
+    startT: 0.01,
+    checkpointCount: 6,
+    laps: 1,
+    laneCount: 3,
+    roadWidth: 20,
+    trafficCount: 12,
+    noBarriers: true,
+    controlPoints: CITY_ROAD_CONTROL_POINTS,
+  },
+  {
+    id: 'mt-fuji-2d',
+    name: 'Mt Fuji Sakura',
+    description: '2D sakura filmstrip — drive toward one Fuji through connected frames',
+    kind: '2d',
+    atmosphere: 'fuji-2d-day',
+    closed: false,
+    startT: 0.01,
+    checkpointCount: 6,
+    laps: 1,
+    laneCount: 2,
+    roadWidth: 16,
+    trafficCount: 8,
+    noBarriers: true,
+    controlPoints: MT_FUJI_CONTROL_POINTS,
   },
 ];
 
@@ -350,6 +484,7 @@ function enrich(def) {
   }
   return {
     ...def,
+    kind: def.kind || '3d',
     atmosphere: def.atmosphere || 'day',
     length: Math.round(length),
     maxPlayers: MAX_PLAYERS,
@@ -365,6 +500,7 @@ export function getTrackList() {
     id: t.id,
     name: t.name,
     description: t.description,
+    kind: t.kind || '3d',
     atmosphere: t.atmosphere,
     laneCount: t.laneCount || 1,
     checkpointCount: t.checkpointCount,

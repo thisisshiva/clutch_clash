@@ -169,6 +169,12 @@ export class TrafficManager {
       || trackDef.id === 'chapmans-peak'
       || trackDef.id === 'black-hole'
       || trackDef.id === 'road-to-endless'
+      || trackDef.id === 'city-road-2d'
+      || trackDef.kind === '2d'
+      || trackDef.id === 'mt-fuji-dawn'
+      || trackDef.id === 'mt-fuji-day'
+      || trackDef.id === 'mt-fuji-night'
+      || trackDef.id === 'mt-fuji-autumn'
     ) return true;
     return trackDef.id === 'mega-straight' && (trackDef.laneCount || 1) > 1;
   }
@@ -181,6 +187,12 @@ export class TrafficManager {
       || trackDef.id === 'chapmans-peak'
       || trackDef.id === 'black-hole'
       || trackDef.id === 'road-to-endless'
+      || trackDef.id === 'city-road-2d'
+      || trackDef.kind === '2d'
+      || trackDef.id === 'mt-fuji-dawn'
+      || trackDef.id === 'mt-fuji-day'
+      || trackDef.id === 'mt-fuji-night'
+      || trackDef.id === 'mt-fuji-autumn'
     ) {
       return Math.min(trackDef.trafficCount ?? 8, performanceConfig.trafficMeshes);
     }

@@ -5,13 +5,14 @@ import { fileURLToPath } from 'node:url';
 import { loadConnections } from './connections.js';
 import { generateVideoMetadata } from './gemini.js';
 import { uploadToYouTube, hasYouTubeCredentials } from './youtube.js';
+import { uploadReel, hasInstagramCredentials } from './instagram.js';
 import { convertToMp4, mp4FileName } from './convert.js';
+import { loadThumbnailForTrack, thumbnailFileNameForTrack } from './thumbnails.js';
 import { publishLog } from './logger.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const UPLOADS_DIR = path.resolve(__dirname, '../../uploads');
 const JOBS_DIR = path.resolve(__dirname, '../../jobs');
-const BRAND_THUMBNAIL_PATH = path.resolve(__dirname, '../../../brand/thumbnail-template-1280x720.png');
 
 const jobs = new Map();
 
@@ -44,9 +45,10 @@ export function getJob(jobId) {
 }
 
 /**
- * Saves the recording, generates metadata, then uploads two YouTube variants:
- * a standard landscape video and a vertical Shorts video. Both are private.
- * The landscape upload also gets a Slow Lane custom thumbnail when available.
+ * Saves the recording, generates metadata, then uploads:
+ * - YouTube landscape (full ~3 min) as private
+ * - YouTube Shorts (first 60s vertical) as private
+ * - Instagram Reel (first 60s vertical) published
  * @returns {{ jobId: string }}
  */
 export function startPublishJob({ videoBuffer, filename, trackName }) {
@@ -62,13 +64,14 @@ export function startPublishJob({ videoBuffer, filename, trackName }) {
     fileName: safeName,
     youtubeMp4FileName: null,
     shortsMp4FileName: null,
+    instagramMp4FileName: null,
     thumbnailFileName: null,
     createdAt: Date.now(),
     status: 'processing',
     dryRun: false,
     metadata: null,
     youtube: { status: 'pending' },
-    instagram: { status: 'skipped', reason: 'disabled; publishing YouTube only' },
+    instagram: { status: 'pending' },
     error: null,
   };
   jobs.set(jobId, job);
@@ -99,29 +102,48 @@ async function runJob(job, webmPath) {
   persistJob(job);
 
   const youtubeReady = conn.youtube.enabled && hasYouTubeCredentials(conn.youtube.credentials);
+  const instagramReady = conn.instagram.enabled && hasInstagramCredentials(conn.instagram.credentials);
+
   let youtubeMp4Buffer;
   let shortsMp4Buffer;
+  let instagramMp4Buffer;
 
-  if (youtubeReady && !conn.dryRun) {
+  const needVertical = (youtubeReady || instagramReady) && !conn.dryRun;
+  const needLandscape = youtubeReady && !conn.dryRun;
+
+  if (needLandscape || needVertical) {
     try {
-      const youtubeName = mp4FileName(job.fileName, 'youtube');
-      const youtubeOut = path.join(UPLOADS_DIR, youtubeName);
-      const youtube = await convertToMp4(webmPath, youtubeOut, 'youtube');
-      youtubeMp4Buffer = youtube.buffer;
-      job.youtubeMp4FileName = youtubeName;
+      if (needLandscape) {
+        const youtubeName = mp4FileName(job.fileName, 'youtube');
+        const youtubeOut = path.join(UPLOADS_DIR, youtubeName);
+        const youtube = await convertToMp4(webmPath, youtubeOut, 'youtube');
+        youtubeMp4Buffer = youtube.buffer;
+        job.youtubeMp4FileName = youtubeName;
+      }
 
-      const shortsName = mp4FileName(job.fileName, 'shorts');
-      const shortsOut = path.join(UPLOADS_DIR, shortsName);
-      const shorts = await convertToMp4(webmPath, shortsOut, 'shorts');
-      shortsMp4Buffer = shorts.buffer;
-      job.shortsMp4FileName = shortsName;
+      if (needVertical) {
+        // One 60s vertical encode shared by Shorts + Instagram when both are on.
+        const verticalProfile = instagramReady ? 'instagram' : 'shorts';
+        const verticalName = mp4FileName(job.fileName, verticalProfile);
+        const verticalOut = path.join(UPLOADS_DIR, verticalName);
+        const vertical = await convertToMp4(webmPath, verticalOut, verticalProfile);
+        shortsMp4Buffer = vertical.buffer;
+        instagramMp4Buffer = vertical.buffer;
+        if (verticalProfile === 'instagram') {
+          job.instagramMp4FileName = verticalName;
+          job.shortsMp4FileName = verticalName;
+        } else {
+          job.shortsMp4FileName = verticalName;
+        }
+      }
 
       persistJob(job);
-      publishLog.info(`Job ${job.id} converted to YouTube MP4 variants`, {
+      publishLog.info(`Job ${job.id} converted MP4 variants`, {
         youtubeMp4FileName: job.youtubeMp4FileName,
-        youtubeBytes: youtubeMp4Buffer.length,
+        youtubeBytes: youtubeMp4Buffer?.length,
         shortsMp4FileName: job.shortsMp4FileName,
-        shortsBytes: shortsMp4Buffer.length,
+        shortsBytes: shortsMp4Buffer?.length,
+        instagramMp4FileName: job.instagramMp4FileName,
       });
     } catch (err) {
       job.status = 'failed';
@@ -132,7 +154,7 @@ async function runJob(job, webmPath) {
     }
   }
 
-  // --- YouTube: private standard upload + private Shorts upload ---
+  // --- YouTube ---
   if (!conn.youtube.enabled) {
     job.youtube = { status: 'skipped', reason: 'disabled in connections.json' };
   } else if (!hasYouTubeCredentials(conn.youtube.credentials)) {
@@ -147,20 +169,22 @@ async function runJob(job, webmPath) {
         standard: {
           title: job.metadata.title,
           aspect: '16:9',
+          durationHint: '3min+',
           privacy: 'private',
-          thumbnail: path.basename(BRAND_THUMBNAIL_PATH),
+          thumbnail: thumbnailFileNameForTrack(job.trackName),
         },
         shorts: {
           title: `${job.metadata.title} #Shorts`,
           aspect: '9:16',
+          durationHint: '60s',
           privacy: 'private',
         },
       },
     };
   } else {
     try {
-      const thumbnailBuffer = loadThumbnailBuffer();
-      if (thumbnailBuffer) job.thumbnailFileName = path.basename(BRAND_THUMBNAIL_PATH);
+      const thumbnailBuffer = loadThumbnailForTrack(job.trackName);
+      if (thumbnailBuffer) job.thumbnailFileName = thumbnailFileNameForTrack(job.trackName);
 
       const standard = await uploadToYouTube(conn.youtube.credentials, youtubeMp4Buffer, job.metadata, {
         contentType: 'video/mp4',
@@ -182,9 +206,46 @@ async function runJob(job, webmPath) {
     }
   }
 
+  // --- Instagram ---
+  if (!conn.instagram.enabled) {
+    job.instagram = { status: 'skipped', reason: 'disabled in connections.json' };
+  } else if (!hasInstagramCredentials(conn.instagram.credentials)) {
+    job.instagram = {
+      status: 'skipped',
+      reason: 'Instagram credentials incomplete',
+    };
+  } else if (conn.dryRun) {
+    job.instagram = {
+      status: 'dry-run',
+      wouldUpload: {
+        caption: job.metadata.instagramCaption,
+        aspect: '9:16',
+        durationHint: '60s',
+      },
+    };
+  } else {
+    try {
+      const caption = job.metadata.instagramCaption || job.metadata.description;
+      const videoUrl = conn.publicBaseUrl && job.instagramMp4FileName
+        ? `${conn.publicBaseUrl}/api/publish/videos/${encodeURIComponent(job.instagramMp4FileName)}`
+        : undefined;
+      const result = await uploadReel(conn.instagram.credentials, instagramMp4Buffer, caption, {
+        videoUrl,
+      });
+      job.instagram = { status: 'published', ...result };
+      publishLog.info(`Job ${job.id} Instagram Reel published`, result);
+    } catch (err) {
+      job.instagram = { status: 'error', error: err.message };
+      publishLog.error(`Job ${job.id} Instagram upload failed`, err);
+    }
+  }
+
   job.status = 'completed';
   persistJob(job);
-  publishLog.info(`Job ${job.id} completed`, { youtube: job.youtube?.status });
+  publishLog.info(`Job ${job.id} completed`, {
+    youtube: job.youtube?.status,
+    instagram: job.instagram?.status,
+  });
 }
 
 function makeShortsMetadata(metadata) {
@@ -196,14 +257,4 @@ function makeShortsMetadata(metadata) {
     : `#Shorts\n\n${metadata.description}`;
   const tags = Array.from(new Set([...(metadata.tags || []), 'shorts', 'youtube shorts', 'slow lane']));
   return { ...metadata, title: title.slice(0, 100), description, tags };
-}
-
-function loadThumbnailBuffer() {
-  try {
-    if (!fs.existsSync(BRAND_THUMBNAIL_PATH)) return null;
-    return fs.readFileSync(BRAND_THUMBNAIL_PATH);
-  } catch (err) {
-    publishLog.warn('Could not read YouTube thumbnail template', err);
-    return null;
-  }
 }

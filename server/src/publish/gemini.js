@@ -8,7 +8,7 @@ function fallbackMetadata(trackName) {
       `A cinematic theater-mode drive on ${trackName} in Slow Lane, ` +
       'a cinematic arcade racing game.\n\n#SlowLane #RacingGame #Gaming',
     tags: ['slow lane', 'racing game', 'theater mode', 'cinematic', trackName.toLowerCase()],
-    instagramCaption: `Cinematic drive on ${trackName} in Slow Lane. #SlowLane #RacingGame #Reels`,
+    instagramCaption: `60 seconds on ${trackName}. Cinematic theater run — Slow Lane. #SlowLane #RacingGame #Reels`,
     source: 'fallback',
   };
 }
@@ -26,12 +26,13 @@ export async function generateVideoMetadata({ trackName }) {
 
   const prompt = [
     'You are writing social media copy for "Slow Lane", a cinematic arcade racing game.',
-    `We recorded a 60-second cinematic "theater mode" video of an autopilot drive on the track "${trackName}".`,
+    `We recorded a ~3-minute cinematic theater-mode drive on "${trackName}" for YouTube,`,
+    'plus a 60-second vertical cut for Instagram Reels / YouTube Shorts.',
     'Return JSON with exactly these fields:',
-    '- "title": catchy YouTube title, max 90 characters',
+    '- "title": catchy YouTube title for the full ~3-minute video, max 90 characters',
     '- "description": YouTube description, 2-4 sentences followed by 3-6 hashtags',
     '- "tags": array of up to 10 short YouTube tags',
-    '- "instagramCaption": Instagram Reels caption, max 200 characters, ending with 3-5 hashtags',
+    '- "instagramCaption": Instagram Reels caption for the 60s cut, max 200 characters, ending with 3-5 hashtags',
   ].join('\n');
 
   try {

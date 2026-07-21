@@ -1,6 +1,7 @@
 import { Engine } from './core/Engine.js';
 import { Input } from './core/Input.js';
 import { RaceSession } from './game/RaceSession.js';
+import { Road2DSession } from './game/2d-roads/Road2DSession.js';
 import { RemotePlayers } from './game/RemotePlayers.js';
 import { StateSync } from './net/StateSync.js';
 import { socketClient } from './net/SocketClient.js';
@@ -42,6 +43,10 @@ const theaterRecorder = new TheaterRecorder(
   },
 );
 let theaterTrackName = '';
+
+/** Auto-publish paused — upload theater MP4s manually for now. */
+const AUTO_PUBLISH_ENABLED = false;
+const THEATER_RECORD_MS = 60_000;
 
 let tracks = [];
 let room = null;          // latest room:update payload
@@ -174,19 +179,25 @@ async function onRaceCountdown({ startAt }) {
   hud?.showLoading(false);
 }
 
+async function createPlaySession(trackDef, carModelId, options = {}) {
+  const Session = trackDef.kind === '2d' ? Road2DSession : RaceSession;
+  return Session.create(
+    engine,
+    input,
+    trackDef,
+    carModelId,
+    stateSync,
+    () => room?.players ?? [],
+    options,
+  );
+}
+
 async function startRaceSession(trackDef, me) {
   if (!trackDef?.controlPoints) {
     throw new Error('Invalid track definition');
   }
-  session = await RaceSession.create(
-    engine,
-    input,
-    trackDef,
-    me?.carModel,
-    stateSync,
-    () => room?.players ?? [],
-  );
-  session.onCheckpointPass = async (index) => {
+  session = await createPlaySession(trackDef, me?.carModel);
+  const onCheckpoint = async (index) => {
     const res = await socketClient.request('race:checkpoint', { index });
     if (!res) return;
     if (res.ok) {
@@ -197,6 +208,8 @@ async function startRaceSession(trackDef, me) {
       session.checkpoints.nextIndex = res.expected;
     }
   };
+  session.onCheckpointPass = onCheckpoint;
+  session.onCheckpoint = ({ index }) => onCheckpoint(index);
   session.onHealthDepleted = () => toast('Car wrecked! Respawning...');
   session.onCameraChange = (label) => toast(`Camera: ${label}`);
 
@@ -232,13 +245,19 @@ async function publishTheaterVideo(filename, blob) {
   // Drop theater load before the heavy upload so the browser stays responsive.
   freezeTheaterForPublish();
 
+  if (!AUTO_PUBLISH_ENABLED) {
+    console.log('[publish] auto-upload paused — skipping YouTube/Instagram');
+    toast('Theater recording finished (auto-upload paused)');
+    return;
+  }
+
   try {
     toast('Publishing theater video (high quality encode may take a few minutes)…');
     const jobId = await uploadTheaterVideo(blob, {
       filename,
       trackName: theaterTrackName || 'Slow Lane',
     });
-    const job = await waitForPublishJob(jobId, { timeoutMs: 600_000, intervalMs: 3000 });
+    const job = await waitForPublishJob(jobId, { timeoutMs: 900_000, intervalMs: 3000 });
     if (!job) {
       toast('Publishing is taking a while — check the server logs');
       return;
@@ -251,16 +270,24 @@ async function publishTheaterVideo(filename, blob) {
     if (job.youtube?.status === 'error') {
       console.error('[publish] YouTube error', job.youtube.error);
     }
+    if (job.instagram?.status === 'error') {
+      console.error('[publish] Instagram error', job.instagram.error);
+    }
     console.log('[publish] job result', job);
 
     const parts = [];
+    if (job.instagram?.status === 'published') {
+      parts.push('Instagram Reel: published');
+    } else if (job.instagram?.status && job.instagram.status !== 'skipped') {
+      parts.push(`Instagram: ${job.instagram.status}`);
+    }
     if (job.youtube?.status === 'uploaded-private') {
-      parts.push('YouTube video: private draft ready');
-      parts.push('YouTube Short: private draft ready');
+      parts.push('YouTube: private draft');
     } else if (job.youtube?.status && job.youtube.status !== 'skipped') {
       parts.push(`YouTube: ${job.youtube.status}`);
     }
     toast(parts.length ? parts.join(' · ') : 'Publish finished');
+    if (job.instagram?.permalink) console.log('[publish] Instagram', job.instagram.permalink);
     if (job.youtube?.standard?.url) console.log('[publish] YouTube standard', job.youtube.standard.url);
     if (job.youtube?.shorts?.url) console.log('[publish] YouTube Shorts', job.youtube.shorts.url);
   } catch (err) {
@@ -323,15 +350,7 @@ async function startTheaterMode(trackId) {
   hud?.showLoading(true);
 
   try {
-    session = await RaceSession.create(
-      engine,
-      input,
-      trackDef,
-      'range-rover',
-      stateSync,
-      () => [],
-      { theaterMode: true },
-    );
+    session = await createPlaySession(trackDef, 'range-rover', { theaterMode: true });
     session.onTheaterExit = exitTheater;
   } catch (err) {
     console.error('Theater start failed', err);
@@ -343,17 +362,17 @@ async function startTheaterMode(trackId) {
   hud?.showLoading(false);
   engine.beginTheaterCapture({ width: 1920, height: 1080 });
   session.startTheaterDrive();
-  const musicSrc = base.id === 'road-to-heaven-snow'
+  const musicSrc = (base.id === 'road-to-heaven-snow' || base.id === 'mt-fuji-night')
     ? '/audio/bring-it-together.mp3'
     : '/audio/windy-road-back-to-you.mp3';
-  const songName = base.id === 'road-to-heaven-snow'
+  const songName = (base.id === 'road-to-heaven-snow' || base.id === 'mt-fuji-night')
     ? 'Bring It Together'
     : 'Windy Road Back To You';
   await theaterMusic.start(musicSrc);
   const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
   const slug = String(base.id || 'theater').replace(/[^a-z0-9-]+/gi, '-');
   const started = await theaterRecorder.start({
-    durationMs: 60_000,
+    durationMs: THEATER_RECORD_MS,
     filename: `${slug}-theater-${stamp}.webm`,
     width: 1920,
     height: 1080,
@@ -524,7 +543,7 @@ function showHud(trackDef, { theater = false } = {}) {
   lobby = null;
   clearInterval(theaterHudTimer);
   theaterHudTimer = null;
-  minimap = (!theater && trackDef) ? createMinimap(trackDef) : null;
+  minimap = (!theater && trackDef && trackDef.kind !== '2d') ? createMinimap(trackDef) : null;
   hud = HUD({
     onToggleVoice: toggleVoice,
     onLeave: theater ? exitTheater : leaveRoom,

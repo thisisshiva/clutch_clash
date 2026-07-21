@@ -36,6 +36,14 @@ const THEATER_CAMERA_MODES = [
   { id: 'hero', label: 'Hero', kind: 'chase', distance: 15, height: 5.2, lookAt: 1.15, fov: 56, lerp: 0.65, speedPull: 1.6, speedFov: 6 },
 ];
 
+/** Mt Fuji Sakura — look ahead toward the mountain, softer cinematic framing. */
+const MT_FUJI_SAKURA_THEATER_CAMERAS = [
+  { id: 'fuji-road', label: 'Road Poem', kind: 'chase', distance: 12, height: 1.25, lookAt: 1.9, lookAhead: 16, fov: 60, lerp: 0.5, speedPull: 0.35, speedFov: 4 },
+  { id: 'fuji-shoulder', label: 'Sakura Shoulder', kind: 'side', distance: 11, height: 1.9, lateral: 8.5, lookAt: 1.7, lookAhead: 12, fov: 52, lerp: 0.45, speedPull: 0.6, speedFov: 3 },
+  { id: 'fuji-float', label: 'Float', kind: 'chase', distance: 17, height: 3.8, lookAt: 1.5, lookAhead: 14, fov: 50, lerp: 0.4, speedPull: 1.0, speedFov: 3 },
+  { id: 'fuji-hero', label: 'Hero', kind: 'chase', distance: 9.5, height: 2.2, lookAt: 1.6, lookAhead: 10, fov: 58, lerp: 0.55, speedPull: 0.7, speedFov: 5 },
+];
+
 /**
  * One race on one track: local car + physics + checkpoints + chase camera +
  * network state publishing + engine audio. Remote cars are handled by
@@ -102,7 +110,9 @@ export class RaceSession {
     this._wrecking = false;
     this._wreckTimer = 0;
     this._camShake = 0;
-    this._cameraModes = this.theaterMode ? THEATER_CAMERA_MODES : CAMERA_MODES;
+    this._cameraModes = this.theaterMode
+      ? (trackDef.id === 'mt-fuji-day' ? MT_FUJI_SAKURA_THEATER_CAMERAS : THEATER_CAMERA_MODES)
+      : CAMERA_MODES;
     this._cameraMode = this.theaterMode ? 0 : 0;
     this._defaultFov = engine.camera.fov;
     this._targetFov = this._cameraModes[0].fov;
@@ -115,7 +125,7 @@ export class RaceSession {
     }
     this._tireTrail = null;
     this._cameraCycleTimer = 0;
-    this._cameraCycleInterval = 14;
+    this._cameraCycleInterval = trackDef.id === 'mt-fuji-day' ? 18 : 14;
     this._orbitAngle = 0;
     this._theaterDriving = false;
     /** @type {'hold'|'reveal'|'flow'} hold=Low through intro; reveal=map orbit; flow=cycle */
@@ -124,6 +134,10 @@ export class RaceSession {
     this._theaterRevealDuration = 11;
     this._mapOrbitAngle = 0;
     this._revealOrbit = { distance: 32, height: 14, lookAt: 1.2, speed: 0.28, fov: 52 };
+    if (trackDef.id === 'mt-fuji-day') {
+      this._revealOrbit = { distance: 20, height: 5.5, lookAt: 2.0, speed: 0.2, fov: 54 };
+      this._theaterRevealDuration = 6;
+    }
 
     this.onCheckpointPass = null;
     this.onBarrierHit = null;
@@ -186,8 +200,10 @@ export class RaceSession {
 
   _beginTheaterFlowCycle() {
     this._theaterCamPhase = 'flow';
-    // Skip Low — already used for the intro; start the aesthetic cycle at Side.
-    this._cameraMode = 1 % this._cameraModes.length;
+    // Sakura: stay on the road-poem camera. Others skip Low and start at Side.
+    this._cameraMode = this.trackDef.id === 'mt-fuji-day'
+      ? 0
+      : 1 % this._cameraModes.length;
     this._cameraCycleTimer = 0;
     const preset = this._cameraPreset();
     this._targetFov = preset.fov;
@@ -487,7 +503,9 @@ export class RaceSession {
     const py = this.car.position.y;
     const pz = this.car.position.z;
     let ahead = 0;
-    if (this.theaterMode) {
+    if (preset.lookAhead != null) {
+      ahead = preset.lookAhead;
+    } else if (this.theaterMode) {
       if (preset.kind === 'lead') ahead = -1.2;
       else if (preset.kind === 'chase' && preset.height > 12) ahead = 6;
       else ahead = 2.4;

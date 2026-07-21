@@ -111,6 +111,71 @@ const BLACK_HOLE = {
   clouds: false,
 };
 
+/** Mt Fuji dawn — anime sunrise, violet mountain glow, gold horizon. */
+const MT_FUJI_DAWN = {
+  background: 0x2a1848,
+  fogColor: 0xd8a898,
+  fogNear: 900,
+  fogFar: 4800,
+  exposure: 1.24,
+  hemisphere: { sky: 0xffc8a0, ground: 0x6a4858, intensity: 1.05 },
+  sun: { color: 0xffa070, intensity: 2.5, position: [160, 42, -200] },
+  fill: { color: 0xc080c0, intensity: 0.65, position: [-100, 50, 90] },
+  moon: { color: 0xc8d8ff, intensity: 0, position: [-90, 140, 70] },
+  ground: { color: 0x6a5048, roughness: 0.98 },
+  splitTerrain: true,
+  clouds: false,
+};
+
+/** Mt Fuji sakura day — soft spring sky matching the painting. */
+const MT_FUJI_DAY = {
+  background: 0x7ec4e8,
+  fogColor: 0xd8e8f0,
+  fogNear: 3500,
+  fogFar: 14000,
+  exposure: 1.22,
+  hemisphere: { sky: 0xeef6fc, ground: 0x6a9a68, intensity: 1.0 },
+  sun: { color: 0xfff4e8, intensity: 2.2, position: [90, 170, 50] },
+  fill: { color: 0xffd0e0, intensity: 0.3, position: [-90, 40, -70] },
+  moon: { color: 0xc8d8ff, intensity: 0, position: [-90, 140, 70] },
+  ground: { color: 0x6a9a68, roughness: 0.95 },
+  splitTerrain: true,
+  clouds: false,
+};
+
+/** Mt Fuji night — deep indigo anime sky, moon glow. */
+const MT_FUJI_NIGHT = {
+  background: 0x02040c,
+  fogColor: 0x152438,
+  fogNear: 700,
+  fogFar: 4200,
+  exposure: 1.08,
+  hemisphere: { sky: 0x4a68a0, ground: 0x141c28, intensity: 0.52 },
+  sun: { color: 0xa8c4e8, intensity: 0.08, position: [80, 40, -60] },
+  fill: { color: 0x5a78b0, intensity: 0.32, position: [-70, 50, 90] },
+  moon: { color: 0xf0f4ff, intensity: 2.55, position: [0, 200, 40] },
+  ground: { color: 0x141c28, roughness: 0.98 },
+  splitTerrain: true,
+  clouds: false,
+  snow: true,
+};
+
+/** Mt Fuji autumn — warm amber air, crimson foliage haze. */
+const MT_FUJI_AUTUMN = {
+  background: 0x3a6898,
+  fogColor: 0xe0b080,
+  fogNear: 900,
+  fogFar: 4800,
+  exposure: 1.28,
+  hemisphere: { sky: 0xffd8a8, ground: 0x7a4830, intensity: 1.05 },
+  sun: { color: 0xffc070, intensity: 2.5, position: [120, 55, -140] },
+  fill: { color: 0xd08060, intensity: 0.55, position: [-90, 45, 80] },
+  moon: { color: 0xc8d8ff, intensity: 0, position: [-90, 140, 70] },
+  ground: { color: 0x7a4830, roughness: 0.97 },
+  splitTerrain: true,
+  clouds: false,
+};
+
 /** Infinite desert highway — bleached sky, soft heat haze, endless flat. */
 const ENDLESS_DESERT = {
   background: 0xe8d4b0,
@@ -127,6 +192,22 @@ const ENDLESS_DESERT = {
   clouds: true,
 };
 
+/** Flat 2D night city — soft indigo fog so layered plates read cleanly. */
+const CITY_2D_NIGHT = {
+  background: 0x0c1020,
+  fogColor: 0x181c30,
+  fogNear: 400,
+  fogFar: 4200,
+  exposure: 1.14,
+  hemisphere: { sky: 0x3a4a78, ground: 0x141820, intensity: 0.6 },
+  sun: { color: 0xffaa66, intensity: 0.1, position: [100, 40, -80] },
+  fill: { color: 0x6688cc, intensity: 0.5, position: [-90, 50, 100] },
+  moon: { color: 0xd8e4ff, intensity: 1.6, position: [-60, 160, 40] },
+  ground: { color: 0x12151c, roughness: 0.98 },
+  splitTerrain: true,
+  clouds: false,
+};
+
 const PRESETS = {
   day: DAY,
   'rain-evening': RAIN_EVENING,
@@ -136,6 +217,12 @@ const PRESETS = {
   'chapmans-peak': CHAPMANS_PEAK,
   'black-hole': BLACK_HOLE,
   'endless-desert': ENDLESS_DESERT,
+  'city-2d-night': CITY_2D_NIGHT,
+  'fuji-2d-day': MT_FUJI_DAY,
+  'mt-fuji-dawn': MT_FUJI_DAWN,
+  'mt-fuji-day': MT_FUJI_DAY,
+  'mt-fuji-night': MT_FUJI_NIGHT,
+  'mt-fuji-autumn': MT_FUJI_AUTUMN,
 };
 
 function resizeGround(env, trackLength = 0) {

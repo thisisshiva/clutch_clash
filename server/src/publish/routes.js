@@ -3,6 +3,7 @@ import express from 'express';
 import { startPublishJob, getJob, UPLOADS_DIR } from './publishService.js';
 import { loadConnections } from './connections.js';
 import { hasYouTubeCredentials } from './youtube.js';
+import { hasInstagramCredentials } from './instagram.js';
 import { publishLog } from './logger.js';
 
 /**
@@ -21,16 +22,20 @@ export function registerPublishRoutes(app) {
       youtube: {
         enabled: Boolean(conn.youtube.enabled),
         configured: hasYouTubeCredentials(conn.youtube.credentials),
-        outputs: ['standard-16x9', 'shorts-9x16'],
+        outputs: ['standard-16x9-3min', 'shorts-9x16-60s'],
       },
-      instagram: { enabled: false, skipped: true },
+      instagram: {
+        enabled: Boolean(conn.instagram.enabled),
+        configured: hasInstagramCredentials(conn.instagram.credentials),
+        outputs: ['reels-9x16-60s'],
+      },
       gemini: Boolean(process.env.GEMINI_API_KEY),
     });
   });
 
   app.post(
     '/api/publish/theater',
-    express.raw({ type: ['video/webm', 'application/octet-stream'], limit: '300mb' }),
+    express.raw({ type: ['video/webm', 'application/octet-stream'], limit: '900mb' }),
     (req, res) => {
       try {
         if (!req.body?.length) {
