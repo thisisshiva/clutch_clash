@@ -7,6 +7,7 @@ function isTheaterTrack(track) {
     || track?.id === 'north-path'
     || track?.id === 'chapmans-peak'
     || track?.id === 'black-hole'
+    || track?.id === 'bh-2'
     || track?.id === 'road-to-endless'
     || track?.id === 'mt-fuji-dawn'
     || track?.id === 'mt-fuji-day'

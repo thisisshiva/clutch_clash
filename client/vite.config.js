@@ -10,6 +10,10 @@ export default defineConfig({
   server: {
     host: true,
     port: 5173,
+    fs: {
+      // Brand art used as Black Hole destination plate.
+      allow: ['..'],
+    },
     proxy: {
       '/socket.io': {
         target: 'http://localhost:3000',

@@ -105,20 +105,18 @@ const CHAPMANS_PEAK_CONTROL_POINTS = [
  * ~8 km spiral approach into a cosmic void — tightening arcs toward the
  * event horizon at the far end of the run.
  */
-const BLACK_HOLE_CONTROL_POINTS = (() => {
-  const pts = [];
-  for (let i = 0; i < 16; i++) {
-    const t = i / 15;
-    const angle = t * Math.PI * 2.4;
-    const radius = 920 - t * 620;
-    pts.push([
-      Math.round(Math.sin(angle) * radius),
-      0,
-      Math.round(-3800 + t * 7600 + Math.cos(angle) * radius * 0.35),
-    ]);
-  }
-  return pts;
-})();
+/** ~10 km approach into the void — mostly straight for the thumbnail / theater look. */
+const BLACK_HOLE_CONTROL_POINTS = [
+  [0, 0, -5200],
+  [60, 0, -3900],
+  [-40, 0, -2600],
+  [50, 0, -1300],
+  [-30, 0, 0],
+  [40, 0, 1300],
+  [-20, 0, 2600],
+  [10, 0, 3900],
+  [0, 0, 5200],
+];
 
 /** ~12 km vanishing-point highway — long straights with soft desert drift. */
 const ROAD_TO_ENDLESS_CONTROL_POINTS = [
@@ -154,6 +152,21 @@ const CITY_ROAD_CONTROL_POINTS = [
 ];
 
 const TRACK_DEFS = [
+  {
+    id: 'bh-2',
+    name: 'BH-2',
+    description: 'Sandbox — road and black hole only (polish target)',
+    atmosphere: 'black-hole',
+    closed: false,
+    startT: 0.01,
+    checkpointCount: 7,
+    laps: 1,
+    laneCount: 2,
+    roadWidth: 14,
+    trafficCount: 0,
+    noBarriers: true,
+    controlPoints: BLACK_HOLE_CONTROL_POINTS,
+  },
   {
     id: 'sprint',
     name: 'Sprint Circuit',
@@ -318,7 +331,7 @@ const TRACK_DEFS = [
   {
     id: 'black-hole',
     name: 'Black Hole',
-    description: 'Spiral into the void — neon road, accretion glow, event horizon ahead',
+    description: 'Drive the neon causeway into a glowing event horizon',
     atmosphere: 'black-hole',
     closed: false,
     startT: 0.01,

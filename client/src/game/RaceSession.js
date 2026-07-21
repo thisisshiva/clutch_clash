@@ -44,6 +44,28 @@ const MT_FUJI_SAKURA_THEATER_CAMERAS = [
   { id: 'fuji-hero', label: 'Hero', kind: 'chase', distance: 9.5, height: 2.2, lookAt: 1.6, lookAhead: 10, fov: 58, lerp: 0.55, speedPull: 0.7, speedFov: 5 },
 ];
 
+/** Black Hole — chase framing like black-hole-bg.png (road → hole, rocks left). */
+const BLACK_HOLE_THEATER_CAMERAS = [
+  { id: 'void-hero', label: 'Void Hero', kind: 'chase', distance: 18, height: 5.5, lookAt: 1.0, lookAhead: 42, fov: 48, lerp: 0.4, speedPull: 0.4, speedFov: 2, lateral: -2.5 },
+  { id: 'void-low', label: 'Causeway', kind: 'chase', distance: 12, height: 2.4, lookAt: 1.5, lookAhead: 30, fov: 54, lerp: 0.46, speedPull: 0.3, speedFov: 3, lateral: -1.5 },
+  { id: 'void-float', label: 'Asteroid Float', kind: 'chase', distance: 24, height: 9.5, lookAt: 0.8, lookAhead: 34, fov: 44, lerp: 0.36, speedPull: 0.7, speedFov: 2, lateral: -3 },
+  { id: 'void-side', label: 'Lantern Side', kind: 'side', distance: 14, height: 3.2, lateral: 11, lookAt: 1.1, lookAhead: 26, fov: 46, lerp: 0.4, speedPull: 0.5, speedFov: 2 },
+];
+
+/** BH-2 sandbox — hole is closer, so look farther ahead and sit a bit higher. */
+const BH2_THEATER_CAMERAS = [
+  { id: 'bh2-hero', label: 'Hole Hero', kind: 'chase', distance: 16, height: 5.0, lookAt: 2.2, lookAhead: 55, fov: 50, lerp: 0.4, speedPull: 0.35, speedFov: 2, lateral: -2 },
+  { id: 'bh2-low', label: 'Road In', kind: 'chase', distance: 11, height: 2.2, lookAt: 2.5, lookAhead: 40, fov: 56, lerp: 0.45, speedPull: 0.25, speedFov: 3, lateral: -1.2 },
+  { id: 'bh2-float', label: 'Gas Float', kind: 'chase', distance: 20, height: 8.0, lookAt: 1.5, lookAhead: 48, fov: 46, lerp: 0.36, speedPull: 0.6, speedFov: 2, lateral: -2.5 },
+];
+
+function theaterCamerasFor(trackId) {
+  if (trackId === 'mt-fuji-day') return MT_FUJI_SAKURA_THEATER_CAMERAS;
+  if (trackId === 'bh-2') return BH2_THEATER_CAMERAS;
+  if (trackId === 'black-hole') return BLACK_HOLE_THEATER_CAMERAS;
+  return THEATER_CAMERA_MODES;
+}
+
 /**
  * One race on one track: local car + physics + checkpoints + chase camera +
  * network state publishing + engine audio. Remote cars are handled by
@@ -57,9 +79,9 @@ export class RaceSession {
     engine.scene.add(session.car);
     if (trackDef.atmosphere === 'black-hole') {
       attachCarHeadlights(session.car, {
-        color: 0xd8e6ff,
-        intensity: 7,
-        distance: 72,
+        color: 0xc8d8f0,
+        intensity: 4.2,
+        distance: 55,
         tailColor: 0xb02030,
       });
     }
@@ -111,7 +133,7 @@ export class RaceSession {
     this._wreckTimer = 0;
     this._camShake = 0;
     this._cameraModes = this.theaterMode
-      ? (trackDef.id === 'mt-fuji-day' ? MT_FUJI_SAKURA_THEATER_CAMERAS : THEATER_CAMERA_MODES)
+      ? theaterCamerasFor(trackDef.id)
       : CAMERA_MODES;
     this._cameraMode = this.theaterMode ? 0 : 0;
     this._defaultFov = engine.camera.fov;
@@ -125,7 +147,7 @@ export class RaceSession {
     }
     this._tireTrail = null;
     this._cameraCycleTimer = 0;
-    this._cameraCycleInterval = trackDef.id === 'mt-fuji-day' ? 18 : 14;
+    this._cameraCycleInterval = (trackDef.id === 'mt-fuji-day' || trackDef.id === 'black-hole' || trackDef.id === 'bh-2') ? 18 : 14;
     this._orbitAngle = 0;
     this._theaterDriving = false;
     /** @type {'hold'|'reveal'|'flow'} hold=Low through intro; reveal=map orbit; flow=cycle */
@@ -136,6 +158,10 @@ export class RaceSession {
     this._revealOrbit = { distance: 32, height: 14, lookAt: 1.2, speed: 0.28, fov: 52 };
     if (trackDef.id === 'mt-fuji-day') {
       this._revealOrbit = { distance: 20, height: 5.5, lookAt: 2.0, speed: 0.2, fov: 54 };
+      this._theaterRevealDuration = 6;
+    }
+    if (trackDef.id === 'black-hole' || trackDef.id === 'bh-2') {
+      this._revealOrbit = { distance: 22, height: 6, lookAt: 2.0, speed: 0.14, fov: 52 };
       this._theaterRevealDuration = 6;
     }
 
@@ -200,8 +226,8 @@ export class RaceSession {
 
   _beginTheaterFlowCycle() {
     this._theaterCamPhase = 'flow';
-    // Sakura: stay on the road-poem camera. Others skip Low and start at Side.
-    this._cameraMode = this.trackDef.id === 'mt-fuji-day'
+    // Sakura / Black Hole: stay on the hero road framing. Others skip Low → Side.
+    this._cameraMode = (this.trackDef.id === 'mt-fuji-day' || this.trackDef.id === 'black-hole' || this.trackDef.id === 'bh-2')
       ? 0
       : 1 % this._cameraModes.length;
     this._cameraCycleTimer = 0;
@@ -671,7 +697,12 @@ export class RaceSession {
 
     const dist = Math.max(3.8, preset.distance - speedRatio * (preset.speedPull ?? 1.5));
     const height = Math.max(1.8, preset.height - speedRatio * (preset.speedPull ?? 1.5) * 0.35);
-    return new THREE.Vector3(px - sin * dist, py + height, pz - cos * dist);
+    const lateral = preset.lateral ?? 0;
+    return new THREE.Vector3(
+      px - sin * dist + rightX * lateral,
+      py + height,
+      pz - cos * dist + rightZ * lateral,
+    );
   }
 
   _snapCamera() {

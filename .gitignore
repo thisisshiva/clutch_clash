@@ -4,6 +4,9 @@ dist/
 *.local
 .DS_Store
 *.zip
+# Windows null-device mistakes create real files named "nul"
+nul
+**/nul
 # Social publishing secrets + uploaded recordings
 connections.json
 server/uploads/

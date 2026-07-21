@@ -5,6 +5,7 @@ import { buildSnowHeavenScenery } from './TrackSnowHeavenScenery.js';
 import { addNorthPathBrandMonument } from './TrackNorthPathScenery.js';
 import { buildChapmansPeakScenery } from './TrackChapmansPeakScenery.js';
 import { buildBlackHoleScenery } from './TrackBlackHoleScenery.js';
+import { buildBh2Scenery } from './TrackBh2Scenery.js';
 import { buildEndlessScenery } from './TrackEndlessScenery.js';
 import {
   buildMtFujiDawnScenery,
@@ -298,6 +299,11 @@ export function buildTrackAtmosphere(curve, trackDef) {
 
   if (trackDef.id === 'chapmans-peak') {
     group.add(buildChapmansPeakScenery(curve, trackDef, rng));
+    return group;
+  }
+
+  if (trackDef.id === 'bh-2') {
+    group.add(buildBh2Scenery(curve, trackDef));
     return group;
   }
 

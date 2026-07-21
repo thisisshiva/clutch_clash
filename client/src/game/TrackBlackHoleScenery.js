@@ -2,66 +2,28 @@ import * as THREE from 'three';
 import { performanceTier } from './PerformanceConfig.js';
 import { curveFrameAt, openCurveTRange } from './spline.js';
 
-const VOID_Y = -2.4;
+/**
+ * Theater art brief: brand/thumbnails/black-hole-bg.png
+ * Procedural stand-in until dedicated hole/nebula/asteroid assets arrive.
+ * (Heavy PNG plate removed — it spiked load time.)
+ */
 
 const DENSITY = {
-  low: { stars: 180, rings: 3, beacons: 40, debris: 60 },
-  medium: { stars: 320, rings: 4, beacons: 70, debris: 110 },
-  high: { stars: 520, rings: 5, beacons: 110, debris: 180 },
+  low: { stars: 120, beacons: 48, debris: 90, heroRocks: 24, nebula: 3, lanternLights: 12 },
+  medium: { stars: 180, beacons: 64, debris: 140, heroRocks: 36, nebula: 4, lanternLights: 16 },
+  high: { stars: 240, beacons: 80, debris: 180, heroRocks: 48, nebula: 5, lanternLights: 20 },
 }[performanceTier];
 
-function makeVoidTexture() {
-  const size = 512;
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = size;
-  const ctx = canvas.getContext('2d');
-
-  const grad = ctx.createLinearGradient(0, 0, size, 0);
-  grad.addColorStop(0, '#0a0614');
-  grad.addColorStop(0.35, '#120828');
-  grad.addColorStop(0.7, '#080414');
-  grad.addColorStop(1, '#030208');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, size, size);
-
-  for (let i = 0; i < 90; i++) {
-    ctx.fillStyle = `rgba(${40 + Math.random() * 80}, ${20 + Math.random() * 40}, ${90 + Math.random() * 100}, ${0.04 + Math.random() * 0.1})`;
-    ctx.fillRect(Math.random() * size, Math.random() * size, 20 + Math.random() * 80, 2 + Math.random() * 6);
-  }
-
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.wrapS = THREE.ClampToEdgeWrapping;
-  tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(1, 8);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
-}
-
-function makeNeonRoadAccentTexture() {
-  const size = 256;
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = size;
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#06040c';
-  ctx.fillRect(0, 0, size, size);
-  // Soft violet edge lines — muted so car lights stay the hero.
-  ctx.fillStyle = 'rgba(140, 100, 200, 0.28)';
-  ctx.fillRect(0, 0, 10, size);
-  ctx.fillStyle = 'rgba(70, 120, 200, 0.22)';
-  ctx.fillRect(size - 10, 0, 10, size);
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.wrapS = THREE.ClampToEdgeWrapping;
-  tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(1, 40);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
+function rngJitter(seed) {
+  const x = Math.sin(seed * 127.1) * 43758.5453;
+  return x - Math.floor(x);
 }
 
 function buildRibbon(curve, samples, halfW, side, extent, trackDef, {
   widthSegments = 4,
   innerPadding = 0.2,
-  height = VOID_Y,
-  outerY = VOID_Y,
+  height = 0,
+  outerY = -2,
 } = {}) {
   const closed = trackDef.closed !== false;
   const trackLength = trackDef.length || 8000;
@@ -79,13 +41,13 @@ function buildRibbon(curve, samples, halfW, side, extent, trackDef, {
     for (let w = 0; w <= widthSegments; w++) {
       const across = w / widthSegments;
       const offset = (halfW + innerPadding + across * (extent - innerPadding)) * side;
-      const y = THREE.MathUtils.lerp(height, outerY, across ** 1.1);
+      const y = THREE.MathUtils.lerp(height, outerY, across ** 1.05);
       positions.push(
         point.x + normal.x * offset,
         y,
         point.z + normal.z * offset,
       );
-      uvs.push(across, (t * 60) % 1);
+      uvs.push(across, (t * 40) % 1);
     }
     if (i < samples) {
       for (let w = 0; w < widthSegments; w++) {
@@ -107,7 +69,7 @@ function buildRibbon(curve, samples, halfW, side, extent, trackDef, {
   return geo;
 }
 
-function addStarfield(group, curve, trackDef, rng, animation) {
+function addStarfield(group, curve, trackDef, rng) {
   const closed = trackDef.closed !== false;
   const trackLength = trackDef.length || 8000;
   const count = DENSITY.stars;
@@ -120,11 +82,11 @@ function addStarfield(group, curve, trackDef, rng, animation) {
     const t = rng();
     const { point, normal } = curveFrameAt(curve, t, closed, trackLength);
     const side = rng() > 0.5 ? 1 : -1;
-    const dist = 40 + rng() * 900;
-    positions[i * 3] = point.x + normal.x * side * dist + (rng() - 0.5) * 80;
-    positions[i * 3 + 1] = 20 + rng() * 220;
-    positions[i * 3 + 2] = point.z + normal.z * side * dist + (rng() - 0.5) * 80;
-    color.setHSL(0.7 + rng() * 0.2, 0.4 + rng() * 0.5, 0.55 + rng() * 0.4);
+    const dist = 140 + rng() * 1600;
+    positions[i * 3] = point.x + normal.x * side * dist + (rng() - 0.5) * 240;
+    positions[i * 3 + 1] = -30 + rng() * 400;
+    positions[i * 3 + 2] = point.z + normal.z * side * dist + (rng() - 0.5) * 240;
+    color.setHSL(0.72 + rng() * 0.1, 0.12 + rng() * 0.2, 0.78 + rng() * 0.2);
     colors[i * 3] = color.r;
     colors[i * 3 + 1] = color.g;
     colors[i * 3 + 2] = color.b;
@@ -132,111 +94,280 @@ function addStarfield(group, curve, trackDef, rng, animation) {
 
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  const stars = new THREE.Points(
+  group.add(new THREE.Points(
     geo,
     new THREE.PointsMaterial({
-      size: 1.8,
+      size: 1.0,
       vertexColors: true,
       transparent: true,
-      opacity: 0.9,
+      opacity: 0.8,
       depthWrite: false,
       sizeAttenuation: true,
+      fog: false,
     }),
-  );
-  stars.name = 'black-hole-stars';
-  group.add(stars);
-  animation.stars = stars;
+  ));
 }
 
+/**
+ * Face-on accretion (RingGeometry) — torus was reading as thin purple rings edge-on.
+ * + world-space pink/orange key light so asteroids/road get the thumbnail lighting.
+ */
 function addAccretionDisk(group, curve, trackDef, animation) {
   const closed = trackDef.closed !== false;
   const trackLength = trackDef.length || 8000;
-  const { point } = curveFrameAt(curve, 0.97, closed, trackLength);
+  const { point, tangent, normal } = curveFrameAt(curve, 0.58, closed, trackLength);
+  const ahead = tangent.clone().normalize();
+  const right = normal.clone().multiplyScalar(-1);
 
-  const disk = new THREE.Mesh(
-    new THREE.RingGeometry(28, 160, 64, 1),
+  const holePos = new THREE.Vector3(
+    point.x + ahead.x * 240 + right.x * 70,
+    145,
+    point.z + ahead.z * 240 + right.z * 70,
+  );
+  // From hole toward the approach (camera side).
+  const towardRoad = new THREE.Vector3(
+    point.x - ahead.x * 400,
+    20,
+    point.z - ahead.z * 400,
+  ).sub(holePos).normalize();
+
+  const root = new THREE.Group();
+  root.position.copy(holePos);
+  root.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), towardRoad);
+
+  // Soft purple shells behind the hot face (secondary only).
+  for (let i = 0; i < DENSITY.nebula; i++) {
+    const t = i / Math.max(1, DENSITY.nebula - 1);
+    const funnel = new THREE.Mesh(
+      new THREE.RingGeometry(280 + i * 90, 360 + i * 100, 48),
+      new THREE.MeshBasicMaterial({
+        color: i % 2 ? 0x4a1878 : 0x6a28a0,
+        transparent: true,
+        opacity: 0.1 - t * 0.01,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        fog: false,
+      }),
+    );
+    funnel.position.z = -30 - i * 40;
+    root.add(funnel);
+    animation[`nebula${i}`] = funnel;
+  }
+
+  // Hot face hierarchy — thick flat rings like the thumbnail temperature.
+  const outerGlow = new THREE.Mesh(
+    new THREE.RingGeometry(250, 420, 64),
     new THREE.MeshBasicMaterial({
-      color: 0xc090d8,
+      color: 0xff38a0,
       transparent: true,
-      opacity: 0.32,
+      opacity: 0.4,
       side: THREE.DoubleSide,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
+      fog: false,
     }),
   );
-  disk.position.set(point.x, 18, point.z + 40);
-  disk.rotation.x = Math.PI / 2.4;
-  group.add(disk);
+  root.add(outerGlow);
+
+  const pink = new THREE.Mesh(
+    new THREE.RingGeometry(200, 300, 64),
+    new THREE.MeshBasicMaterial({
+      color: 0xff50c0,
+      transparent: true,
+      opacity: 0.75,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      fog: false,
+    }),
+  );
+  root.add(pink);
+
+  const disk = new THREE.Mesh(
+    new THREE.RingGeometry(175, 250, 64),
+    new THREE.MeshBasicMaterial({
+      color: 0xff7a18,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      fog: false,
+    }),
+  );
+  root.add(disk);
+
+  const hot = new THREE.Mesh(
+    new THREE.RingGeometry(168, 188, 64),
+    new THREE.MeshBasicMaterial({
+      color: 0xfff0c0,
+      transparent: true,
+      opacity: 0.95,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      fog: false,
+    }),
+  );
+  root.add(hot);
 
   const core = new THREE.Mesh(
-    new THREE.SphereGeometry(22, 24, 16),
-    new THREE.MeshBasicMaterial({ color: 0x000000 }),
+    new THREE.CircleGeometry(172, 64),
+    new THREE.MeshBasicMaterial({ color: 0x000000, fog: false, side: THREE.DoubleSide }),
   );
-  core.position.copy(disk.position);
-  group.add(core);
+  core.position.z = 2;
+  core.renderOrder = 4;
+  root.add(core);
 
-  const glow = new THREE.Sprite(new THREE.SpriteMaterial({
-    color: 0xb090d0,
-    transparent: true,
-    opacity: 0.22,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-  }));
-  glow.position.copy(disk.position);
-  glow.scale.set(220, 220, 1);
-  group.add(glow);
+  group.add(root);
+
+  // World-space key lights (not only local) so the whole causeway gets pink/orange rim.
+  const holeLight = new THREE.PointLight(0xff6820, 14, 6500, 0.85);
+  holeLight.position.copy(holePos).add(towardRoad.clone().multiplyScalar(80));
+  group.add(holeLight);
+
+  const pinkLight = new THREE.PointLight(0xff48b0, 7, 5000, 1.0);
+  pinkLight.position.copy(holePos).add(new THREE.Vector3(0, 120, 0));
+  group.add(pinkLight);
+
+  const key = new THREE.DirectionalLight(0xff70a0, 0.85);
+  key.position.copy(holePos);
+  key.target.position.copy(point);
+  group.add(key);
+  group.add(key.target);
 
   animation.disk = disk;
-  animation.horizonGlow = glow;
+  animation.innerDisk = hot;
+  animation.pinkRing = pink;
+  animation.outerGlow = outerGlow;
+  animation.holeRoot = root;
 }
 
-function addNeonBeacons(group, curve, halfW, trackDef, rng) {
+/** Thumbnail lantern: curb pedestal + post + cyan cube + soft halo + road spill. */
+function addCyanLanterns(group, curve, halfW, trackDef) {
   const count = DENSITY.beacons;
   const closed = trackDef.closed !== false;
   const trackLength = trackDef.length || 8000;
-  const geo = new THREE.BoxGeometry(0.18, 1.6, 0.18);
-  const mat = new THREE.MeshStandardMaterial({
-    color: 0x120818,
-    emissive: 0x6a58a0,
-    emissiveIntensity: 0.55,
-    roughness: 0.55,
+
+  const baseGeo = new THREE.BoxGeometry(1.15, 0.28, 1.15);
+  const postGeo = new THREE.BoxGeometry(0.28, 0.75, 0.28);
+  const cubeGeo = new THREE.BoxGeometry(0.72, 0.72, 0.72);
+  const haloGeo = new THREE.SphereGeometry(0.85, 8, 6);
+
+  const baseMat = new THREE.MeshStandardMaterial({
+    color: 0x16141e,
+    roughness: 0.94,
+    flatShading: true,
   });
-  const mesh = new THREE.InstancedMesh(geo, mat, count * 2);
+  const postMat = new THREE.MeshStandardMaterial({
+    color: 0x0e0c14,
+    roughness: 0.9,
+    flatShading: true,
+  });
+  const cubeMat = new THREE.MeshBasicMaterial({ color: 0x2af0ff, fog: false });
+  const haloMat = new THREE.MeshBasicMaterial({
+    color: 0x2ad8ff,
+    transparent: true,
+    opacity: 0.35,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    fog: false,
+  });
+
+  const bases = new THREE.InstancedMesh(baseGeo, baseMat, count * 2);
+  const posts = new THREE.InstancedMesh(postGeo, postMat, count * 2);
+  const cubes = new THREE.InstancedMesh(cubeGeo, cubeMat, count * 2);
+  const halos = new THREE.InstancedMesh(haloGeo, haloMat, count * 2);
   const m = new THREE.Matrix4();
   const pos = new THREE.Vector3();
+  const quat = new THREE.Quaternion();
+  const scale = new THREE.Vector3(1, 1, 1);
   let idx = 0;
+  const lightBudget = DENSITY.lanternLights;
+  let lightsLeft = lightBudget;
 
   for (let i = 0; i < count; i++) {
-    const t = 0.02 + (i / count) * 0.96;
+    const t = 0.02 + (i / count) * 0.9;
     const { point, normal } = curveFrameAt(curve, t, closed, trackLength);
+
     for (const side of [1, -1]) {
-      pos.set(
-        point.x + normal.x * (halfW + 1.1) * side,
-        0.8,
-        point.z + normal.z * (halfW + 1.1) * side,
-      );
-      m.setPosition(pos);
-      mesh.setMatrixAt(idx++, m);
+      const lx = point.x + normal.x * (halfW + 1.35) * side;
+      const lz = point.z + normal.z * (halfW + 1.35) * side;
+
+      pos.set(lx, 0.45, lz);
+      m.compose(pos, quat, scale);
+      bases.setMatrixAt(idx, m);
+
+      pos.set(lx, 0.95, lz);
+      m.compose(pos, quat, scale);
+      posts.setMatrixAt(idx, m);
+
+      pos.set(lx, 1.55, lz);
+      m.compose(pos, quat, scale);
+      cubes.setMatrixAt(idx, m);
+      halos.setMatrixAt(idx, m);
+
+      // Cap real lights — dozens of PointLights were killing load/FPS.
+      if (lightsLeft > 0 && i % Math.max(1, Math.floor(count / lightBudget)) === 0 && side === 1) {
+        const light = new THREE.PointLight(0x2ad8ff, 2.4, 28, 1.8);
+        light.position.set(lx, 1.7, lz);
+        group.add(light);
+        lightsLeft -= 1;
+      }
+      idx += 1;
     }
   }
-  mesh.count = idx;
-  mesh.instanceMatrix.needsUpdate = true;
-  mesh.name = 'black-hole-beacons';
-  group.add(mesh);
+
+  bases.count = idx;
+  posts.count = idx;
+  cubes.count = idx;
+  halos.count = idx;
+  bases.instanceMatrix.needsUpdate = true;
+  posts.instanceMatrix.needsUpdate = true;
+  cubes.instanceMatrix.needsUpdate = true;
+  halos.instanceMatrix.needsUpdate = true;
+  group.add(bases);
+  group.add(posts);
+  group.add(cubes);
+  group.add(halos);
 }
 
-function addDebris(group, curve, halfW, trackDef, rng, animation) {
-  const count = DENSITY.debris;
+/** Left-heavy rocks — low emissive so pink/cyan lights actually shade them. */
+function addAsteroids(group, curve, halfW, trackDef, rng, animation) {
   const closed = trackDef.closed !== false;
   const trackLength = trackDef.length || 8000;
-  const geo = new THREE.TetrahedronGeometry(0.55, 0);
-  const mat = new THREE.MeshStandardMaterial({
-    color: 0x2a2038,
-    emissive: 0x331144,
-    emissiveIntensity: 0.35,
-    roughness: 0.85,
-  });
-  const mesh = new THREE.InstancedMesh(geo, mat, count);
+  const geos = [
+    new THREE.DodecahedronGeometry(1, 0),
+    new THREE.IcosahedronGeometry(1, 0),
+    new THREE.OctahedronGeometry(1, 0),
+  ];
+
+  const mats = [
+    new THREE.MeshStandardMaterial({
+      color: 0x3a2858,
+      emissive: 0x2a1048,
+      emissiveIntensity: 0.18,
+      roughness: 0.62,
+      metalness: 0.05,
+      flatShading: true,
+    }),
+    new THREE.MeshStandardMaterial({
+      color: 0x2a1c40,
+      emissive: 0x1a0830,
+      emissiveIntensity: 0.14,
+      roughness: 0.7,
+      metalness: 0.04,
+      flatShading: true,
+    }),
+    new THREE.MeshStandardMaterial({
+      color: 0x4a3470,
+      emissive: 0x301050,
+      emissiveIntensity: 0.16,
+      roughness: 0.58,
+      metalness: 0.06,
+      flatShading: true,
+    }),
+  ];
+
+  const count = DENSITY.debris;
+  const mesh = new THREE.InstancedMesh(geos[0], mats[0], count);
   const m = new THREE.Matrix4();
   const pos = new THREE.Vector3();
   const quat = new THREE.Quaternion();
@@ -245,146 +376,137 @@ function addDebris(group, curve, halfW, trackDef, rng, animation) {
   const floaters = [];
 
   for (let i = 0; i < count; i++) {
-    const t = rng();
-    const { point, normal } = curveFrameAt(curve, t, closed, trackLength);
-    const side = rng() > 0.5 ? 1 : -1;
-    const outward = halfW + 8 + rng() * 55;
-    const y = 1.5 + rng() * 18;
+    const t = 0.02 + rng() * 0.85;
+    const { point, normal, tangent } = curveFrameAt(curve, t, closed, trackLength);
+    const side = rng() < 0.82 ? 1 : -1;
+    const outward = halfW + 14 + rng() * 90;
+    const along = (rng() - 0.5) * 36;
     pos.set(
-      point.x + normal.x * outward * side,
-      y,
-      point.z + normal.z * outward * side,
+      point.x + normal.x * outward * side + tangent.x * along,
+      -2 + rng() * 48,
+      point.z + normal.z * outward * side + tangent.z * along,
     );
     euler.set(rng() * Math.PI, rng() * Math.PI, rng() * Math.PI);
     quat.setFromEuler(euler);
-    const s = 0.4 + rng() * 1.6;
-    scale.set(s, s * (0.6 + rng()), s);
+    const s = 4 + rng() * 14;
+    scale.set(s, s * (0.55 + rng() * 0.55), s * (0.65 + rng() * 0.5));
     m.compose(pos, quat, scale);
     mesh.setMatrixAt(i, m);
     floaters.push({
       index: i,
       origin: pos.clone(),
       phase: rng() * Math.PI * 2,
-      amp: 0.4 + rng() * 1.2,
-      spin: 0.2 + rng() * 0.6,
-      quat: quat.clone(),
+      amp: 0.8 + rng() * 2.2,
+      spin: 0.035 + rng() * 0.14,
       scale: scale.clone(),
     });
   }
   mesh.instanceMatrix.needsUpdate = true;
   group.add(mesh);
   animation.debris = { mesh, floaters, m, pos, quat, scale, euler };
+
+  for (let i = 0; i < DENSITY.heroRocks; i++) {
+    const t = 0.08 + (i / DENSITY.heroRocks) * 0.7;
+    const { point, normal } = curveFrameAt(curve, t, closed, trackLength);
+    const side = i % 5 === 0 ? -1 : 1;
+    const rock = new THREE.Mesh(geos[i % geos.length], mats[i % mats.length]);
+    const s = 16 + rng() * 48;
+    rock.scale.set(s, s * (0.45 + rng() * 0.55), s * (0.55 + rng() * 0.5));
+    rock.position.set(
+      point.x + normal.x * (halfW + 28 + rng() * 150) * side,
+      6 + rng() * 65,
+      point.z + (rng() - 0.5) * 70,
+    );
+    rock.rotation.set(rng() * Math.PI, rng() * Math.PI, rng() * Math.PI);
+    group.add(rock);
+  }
 }
 
 /**
- * Black Hole: neon causeway spiraling through a cosmic void toward an
- * accretion disk and event horizon.
+ * Black Hole theater map — locked to brand/thumbnails/black-hole-bg.png.
  */
 export function buildBlackHoleScenery(curve, trackDef, rng) {
   const group = new THREE.Group();
   group.name = 'black-hole-scenery';
   const halfW = trackDef.roadWidth / 2;
-  const samples = Math.max(320, Math.min(900, Math.round((trackDef.length || 8000) / 12)));
-  const extent = trackDef.closed === false ? 4200 : 320;
+  const samples = Math.max(240, Math.min(640, Math.round((trackDef.length || 8000) / 16)));
   const animation = {
     elapsed: 0,
-    stars: null,
     disk: null,
-    horizonGlow: null,
+    innerDisk: null,
+    pinkRing: null,
+    outerGlow: null,
+    holeRoot: null,
     debris: null,
   };
 
-  const voidMat = new THREE.MeshStandardMaterial({
-    map: makeVoidTexture(),
-    color: 0xffffff,
-    roughness: 1,
-    metalness: 0.05,
-  });
-  const accentMat = new THREE.MeshStandardMaterial({
-    map: makeNeonRoadAccentTexture(),
-    color: 0xffffff,
-    roughness: 0.85,
-    emissive: 0x0a0814,
-    emissiveIntensity: 0.15,
-  });
+  const sky = new THREE.Mesh(
+    new THREE.SphereGeometry(4500, 24, 16),
+    new THREE.MeshBasicMaterial({
+      color: 0x140828,
+      side: THREE.BackSide,
+      fog: false,
+      transparent: true,
+      opacity: 0.55,
+    }),
+  );
+  sky.position.y = 180;
+  group.add(sky);
 
+  const curbMat = new THREE.MeshStandardMaterial({
+    color: 0x101018,
+    roughness: 0.96,
+    flatShading: true,
+  });
+  const curbTopMat = new THREE.MeshStandardMaterial({
+    color: 0x181820,
+    roughness: 0.9,
+    flatShading: true,
+  });
   for (const side of [1, -1]) {
-    const voidPlane = new THREE.Mesh(
-      buildRibbon(curve, samples, halfW, side, extent, trackDef, {
-        widthSegments: performanceTier === 'low' ? 3 : 5,
-        innerPadding: 1.6,
-        height: VOID_Y,
-        outerY: VOID_Y - 1.5,
-      }),
-      voidMat,
-    );
-    voidPlane.receiveShadow = true;
-    group.add(voidPlane);
-
-    const accent = new THREE.Mesh(
-      buildRibbon(curve, samples, halfW, side, 2.2, trackDef, {
+    group.add(new THREE.Mesh(
+      buildRibbon(curve, samples, halfW, side, 1.55, trackDef, {
         widthSegments: 2,
+        innerPadding: 0.02,
+        height: 0.55,
+        outerY: 0.15,
+      }),
+      curbMat,
+    ));
+    group.add(new THREE.Mesh(
+      buildRibbon(curve, samples, halfW, side, 1.55, trackDef, {
+        widthSegments: 1,
         innerPadding: 0.05,
-        height: 0.02,
-        outerY: -0.2,
+        height: 0.62,
+        outerY: 0.62,
       }),
-      accentMat,
-    );
-    accent.receiveShadow = true;
-    group.add(accent);
+      curbTopMat,
+    ));
   }
 
-  addStarfield(group, curve, trackDef, rng, animation);
+  addStarfield(group, curve, trackDef, rng);
   addAccretionDisk(group, curve, trackDef, animation);
-  addNeonBeacons(group, curve, halfW, trackDef, rng);
-  addDebris(group, curve, halfW, trackDef, rng, animation);
-
-  // Soft accretion rings floating beside the approach.
-  for (let i = 0; i < DENSITY.rings; i++) {
-    const t = 0.55 + i * 0.08;
-    const { point, normal } = curveFrameAt(curve, t, false, trackDef.length || 8000);
-    const ring = new THREE.Mesh(
-      new THREE.TorusGeometry(18 + i * 8, 0.35, 8, 48),
-      new THREE.MeshBasicMaterial({
-        color: i % 2 ? 0xa888d0 : 0x6688b8,
-        transparent: true,
-        opacity: 0.18,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-      }),
-    );
-    ring.position.set(
-      point.x + normal.x * (60 + i * 25) * (i % 2 ? 1 : -1),
-      12 + i * 4,
-      point.z,
-    );
-    ring.rotation.x = Math.PI / 2.2;
-    ring.rotation.z = i * 0.3;
-    group.add(ring);
-    animation[`ring${i}`] = ring;
-  }
+  addCyanLanterns(group, curve, halfW, trackDef);
+  addAsteroids(group, curve, halfW, trackDef, rng, animation);
 
   group.userData.update = (dt) => {
     animation.elapsed += dt;
     const time = animation.elapsed;
-    if (animation.disk) animation.disk.rotation.z = time * 0.18;
-    if (animation.horizonGlow) {
-      const pulse = 0.28 + Math.sin(time * 1.4) * 0.08;
-      animation.horizonGlow.material.opacity = pulse;
-    }
-    if (animation.stars) {
-      animation.stars.material.opacity = 0.75 + Math.sin(time * 0.7) * 0.15;
-    }
-    for (let i = 0; i < DENSITY.rings; i++) {
-      const ring = animation[`ring${i}`];
-      if (ring) ring.rotation.z += dt * (0.15 + i * 0.05);
+    // Slow drift — thumbnail swirl, not a spinning top.
+    if (animation.disk) animation.disk.rotation.z = time * 0.012;
+    if (animation.innerDisk) animation.innerDisk.rotation.z = time * 0.018;
+    if (animation.pinkRing) animation.pinkRing.rotation.z = -time * 0.01;
+    if (animation.outerGlow) animation.outerGlow.rotation.z = time * 0.006;
+    for (let i = 0; i < DENSITY.nebula; i++) {
+      const n = animation[`nebula${i}`];
+      if (n) n.rotation.z += dt * (0.006 + i * 0.002) * (i % 2 ? 1 : -1);
     }
     if (animation.debris) {
       const { mesh, floaters, m, pos, quat, scale, euler } = animation.debris;
       for (const f of floaters) {
         pos.copy(f.origin);
-        pos.y += Math.sin(time * 0.8 + f.phase) * f.amp;
-        euler.set(time * f.spin, time * f.spin * 0.7 + f.phase, 0);
+        pos.y += Math.sin(time * 0.45 + f.phase) * f.amp;
+        euler.set(time * f.spin, time * f.spin * 0.7 + f.phase, time * f.spin * 0.25);
         quat.setFromEuler(euler);
         scale.copy(f.scale);
         m.compose(pos, quat, scale);

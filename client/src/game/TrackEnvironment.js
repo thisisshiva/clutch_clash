@@ -95,18 +95,18 @@ const CHAPMANS_PEAK = {
   clouds: true,
 };
 
-/** Cosmic void — deep indigo, soft violet rim (not hot neon pink). */
+/** Cosmic void — richer purple air + hole-led lighting for BH-2. */
 const BLACK_HOLE = {
-  background: 0x050810,
-  fogColor: 0x0a0c18,
-  fogNear: 500,
-  fogFar: 5600,
-  exposure: 0.98,
-  hemisphere: { sky: 0x1c1830, ground: 0x080610, intensity: 0.42 },
-  sun: { color: 0xb8a0d8, intensity: 1.15, position: [40, 30, 200] },
-  fill: { color: 0x4a5a88, intensity: 0.35, position: [-120, 50, -80] },
-  moon: { color: 0x6a7aaa, intensity: 0.45, position: [-60, 120, 40] },
-  ground: { color: 0x050508, roughness: 1 },
+  background: 0x0a0418,
+  fogColor: 0x1a0a30,
+  fogNear: 1100,
+  fogFar: 9000,
+  exposure: 1.08,
+  hemisphere: { sky: 0x3a2060, ground: 0x06020e, intensity: 0.42 },
+  sun: { color: 0xff90c0, intensity: 0.35, position: [40, 100, 220] },
+  fill: { color: 0x38b0d8, intensity: 0.28, position: [-100, 30, -50] },
+  moon: { color: 0xff70b8, intensity: 0.45, position: [60, 110, 260] },
+  ground: { color: 0x020108, roughness: 1 },
   splitTerrain: true,
   clouds: false,
 };
